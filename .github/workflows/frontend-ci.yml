@@ -11,17 +11,6 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/frontend-ci.yml"
-  push:
-    branches:
-      - main
-      - dev
-    paths:
-      - "apps/frontend/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/frontend-ci.yml"
-
 permissions:
   contents: read
 

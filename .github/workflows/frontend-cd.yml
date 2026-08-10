@@ -1,6 +1,15 @@
 name: Frontend CD
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/frontend/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/frontend-cd.yml"
   push:
     branches:
       - main
@@ -30,6 +39,7 @@ jobs:
     name: Build and deploy
     runs-on: ubuntu-latest
     environment: production
+    if: github.event_name != 'pull_request' || github.head_ref == 'dev'
 
     env:
       GHCR_REGISTRY: ghcr.io
@@ -54,19 +64,23 @@ jobs:
       - name: Validate deployment config
         run: |
           test -n "$FRONTEND_IMAGE_NAME" || { echo "FRONTEND_IMAGE_NAME variable is required"; exit 1; }
-          test -n "$FRONTEND_DEPLOY_HOSTS" || { echo "FRONTEND_DEPLOY_HOSTS variable is required"; exit 1; }
-          test -n "$DEPLOY_USER" || { echo "DEPLOY_USER variable is required"; exit 1; }
           test -n "$NEXT_PUBLIC_API_URL" || { echo "NEXT_PUBLIC_API_URL secret is required"; exit 1; }
           test -n "$NEXT_PUBLIC_SOCKET_URL" || { echo "NEXT_PUBLIC_SOCKET_URL secret is required"; exit 1; }
-          test -n "${{ secrets.DEPLOY_SSH_KEY }}" || { echo "DEPLOY_SSH_KEY secret is required"; exit 1; }
           test -n "${{ secrets.GHCR_USERNAME }}" || { echo "GHCR_USERNAME secret is required"; exit 1; }
           test -n "${{ secrets.GHCR_TOKEN }}" || { echo "GHCR_TOKEN secret is required"; exit 1; }
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            test -n "$FRONTEND_DEPLOY_HOSTS" || { echo "FRONTEND_DEPLOY_HOSTS variable is required"; exit 1; }
+            test -n "$DEPLOY_USER" || { echo "DEPLOY_USER variable is required"; exit 1; }
+            test -n "${{ secrets.DEPLOY_SSH_KEY }}" || { echo "DEPLOY_SSH_KEY secret is required"; exit 1; }
+          fi
 
       - name: Resolve image tag
         id: image
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.image_tag }}" ]; then
             image_tag="${{ inputs.image_tag }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            image_tag="pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}"
           else
             image_tag="${GITHUB_SHA}"
           fi
@@ -79,7 +93,7 @@ jobs:
           echo "Frontend image: ${image_uri}"
 
       - name: Log in to GHCR
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.GHCR_REGISTRY }}
@@ -87,11 +101,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push image
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -103,16 +117,19 @@ jobs:
             NEXT_PUBLIC_SOCKET_URL=${{ env.NEXT_PUBLIC_SOCKET_URL }}
 
       - name: Set up SSH
+        if: github.event_name != 'pull_request'
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           touch ~/.ssh/known_hosts
-          for host in $FRONTEND_DEPLOY_HOSTS; do
+          hosts="$(printf '%s' "$FRONTEND_DEPLOY_HOSTS" | tr -d '\r' | xargs)"
+          for host in $hosts; do
             ssh-keyscan -H "$host" >> ~/.ssh/known_hosts
           done
 
       - name: Deploy over SSH
+        if: github.event_name != 'pull_request'
         env:
           IMAGE_URI: ${{ steps.image.outputs.uri }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
@@ -141,7 +158,8 @@ jobs:
           exit 1
           SCRIPT
 
-          for host in $FRONTEND_DEPLOY_HOSTS; do
+          hosts="$(printf '%s' "$FRONTEND_DEPLOY_HOSTS" | tr -d '\r' | xargs)"
+          for host in $hosts; do
             echo "Deploying frontend to $host"
             ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$host" \
               "IMAGE_URI='$IMAGE_URI' CONTAINER_NAME='$FRONTEND_CONTAINER_NAME' ENV_FILE='$FRONTEND_ENV_FILE' PORTS='$FRONTEND_PORTS' HEALTH_URL='$FRONTEND_HEALTH_URL' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN' bash -s" < "$remote_script"
