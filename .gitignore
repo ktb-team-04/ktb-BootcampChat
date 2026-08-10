@@ -49,7 +49,6 @@ playwright/.auth/
 # Java / Maven
 target/
 *.class
-apps/backend/.mvn/wrapper/maven-wrapper.jar
 
 # Backend runtime files
 apps/backend/uploads/*

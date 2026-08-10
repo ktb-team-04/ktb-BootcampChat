@@ -13,9 +13,9 @@ public class MongoConfig {
 
     @Bean
     MongoClientSettingsBuilderCustomizer mongoConnectionPoolCustomizer(
-            @Value("${app.mongodb.pool.max-size:100}") int maxSize,
-            @Value("${app.mongodb.pool.min-size:10}") int minSize,
-            @Value("${app.mongodb.pool.max-wait-ms:2000}") long maxWaitMs) {
+            @Value("${app.mongodb.pool.max-size:40}") int maxSize, // 조율 필요
+            @Value("${app.mongodb.pool.min-size:5}") int minSize, // 조율 필요
+            @Value("${app.mongodb.pool.max-wait-ms:1000}") long maxWaitMs) {
         return settings -> settings.applyToConnectionPoolSettings(pool -> pool
                 .maxSize(maxSize)
                 .minSize(minSize)
