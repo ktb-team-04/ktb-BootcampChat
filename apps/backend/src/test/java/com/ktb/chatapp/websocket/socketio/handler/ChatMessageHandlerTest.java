@@ -5,6 +5,7 @@ import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.ktb.chatapp.dto.ChatMessageRequest;
 import com.ktb.chatapp.dto.MessageResponse;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
@@ -162,5 +163,61 @@ class ChatMessageHandlerTest {
         verify(roomActivityNotifier).notifyMessageStored("room-1");
         org.junit.jupiter.api.Assertions.assertEquals("message-1", payloadCaptor.getValue().getId());
         org.junit.jupiter.api.Assertions.assertEquals("hello", payloadCaptor.getValue().getContent());
+    }
+
+    @Test
+    void handleChatMessage_reusesValidatedFileForResponse() {
+        SocketIOClient client = mock(SocketIOClient.class);
+        BroadcastOperations roomOperations = mock(BroadcastOperations.class);
+        SocketUser socketUser = new SocketUser("user-1", "tester", "session-1", "socket-1");
+        when(client.get("user")).thenReturn(socketUser);
+        when(sessionService.validateSession(socketUser.id(), socketUser.authSessionId()))
+                .thenReturn(SessionValidationResult.valid(null));
+        when(rateLimitService.checkRateLimit(eq(socketUser.id()), anyInt(), any()))
+                .thenReturn(RateLimitCheckResult.allowed(
+                        10000, 9999, 60, System.currentTimeMillis() / 1000 + 60, 60));
+
+        User user = new User();
+        user.setId("user-1");
+        user.setName("Tester");
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+
+        Room room = new Room();
+        room.setId("room-1");
+        room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
+        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(bannedWordChecker.containsBannedWord("file message")).thenReturn(false);
+
+        File file = File.builder()
+                .id("file-1")
+                .filename("stored.png")
+                .originalname("profile.png")
+                .mimetype("image/png")
+                .size(68)
+                .user("user-1")
+                .build();
+        when(fileRepository.findById("file-1")).thenReturn(Optional.of(file));
+        when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
+        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.setId("message-1");
+            message.setTimestamp(LocalDateTime.of(2026, 8, 10, 17, 0));
+            return message;
+        });
+
+        ChatMessageRequest request = ChatMessageRequest.builder()
+                .room("room-1")
+                .type("file")
+                .content("file message")
+                .fileData(Map.of("_id", "file-1"))
+                .build();
+
+        handler.handleChatMessage(client, request);
+
+        ArgumentCaptor<MessageResponse> payloadCaptor = ArgumentCaptor.forClass(MessageResponse.class);
+        verify(client).sendEvent(eq(MESSAGE), payloadCaptor.capture());
+        verify(fileRepository, times(1)).findById("file-1");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "file-1", payloadCaptor.getValue().getFile().getId());
     }
 }

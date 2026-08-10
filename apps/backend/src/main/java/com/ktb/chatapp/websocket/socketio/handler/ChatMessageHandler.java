@@ -149,12 +149,14 @@ public class ChatMessageHandler {
             }
 
             String messageType = data.getMessageType();
-            Message message = switch (messageType) {
+            PreparedMessage preparedMessage = switch (messageType) {
                 case "file" -> handleFileMessage(roomId, socketUser.id(), messageContent, data.getFileData());
-                case "text" -> handleTextMessage(roomId, socketUser.id(), messageContent);
+                case "text" -> new PreparedMessage(
+                        handleTextMessage(roomId, socketUser.id(), messageContent), null);
                 default -> throw new IllegalArgumentException("Unsupported message type: " + messageType);
             };
 
+            Message message = preparedMessage.message();
             if (message == null) {
                 log.warn("Empty message - ignoring. room: {}, userId: {}, messageType: {}", roomId, socketUser.id(), messageType);
                 timerSample.stop(createTimer("ignored", messageType));
@@ -162,7 +164,8 @@ public class ChatMessageHandler {
             }
 
             Message savedMessage = messageRepository.save(message);
-            MessageResponse messageResponse = createMessageResponse(savedMessage, sender);
+            MessageResponse messageResponse = createMessageResponse(
+                    savedMessage, sender, preparedMessage.file());
 
             socketIOServer.getRoomOperations(roomId)
                     .sendEvent(MESSAGE, messageResponse);
@@ -193,7 +196,11 @@ public class ChatMessageHandler {
         }
     }
 
-    private Message handleFileMessage(String roomId, String userId, MessageContent messageContent, Map<String, Object> fileData) {
+    private PreparedMessage handleFileMessage(
+            String roomId,
+            String userId,
+            MessageContent messageContent,
+            Map<String, Object> fileData) {
         if (fileData == null || fileData.get("_id") == null) {
             throw new IllegalArgumentException("파일 데이터가 올바르지 않습니다.");
         }
@@ -221,7 +228,7 @@ public class ChatMessageHandler {
         metadata.put("originalName", file.getOriginalname());
         message.setMetadata(metadata);
 
-        return message;
+        return new PreparedMessage(message, file);
     }
 
     private Message handleTextMessage(String roomId, String userId, MessageContent messageContent) {
@@ -240,7 +247,7 @@ public class ChatMessageHandler {
         return message;
     }
 
-    private MessageResponse createMessageResponse(Message message, User sender) {
+    private MessageResponse createMessageResponse(Message message, User sender, File attachedFile) {
         var messageResponse = new MessageResponse();
         messageResponse.setId(message.getId());
         messageResponse.setRoomId(message.getRoomId());
@@ -251,13 +258,14 @@ public class ChatMessageHandler {
         messageResponse.setSender(UserResponse.from(sender));
         messageResponse.setMetadata(message.getMetadata());
 
-        if (message.getFileId() != null) {
-            fileRepository.findById(message.getFileId())
-                    .ifPresent(file -> messageResponse.setFile(FileResponse.from(file)));
+        if (attachedFile != null) {
+            messageResponse.setFile(FileResponse.from(attachedFile));
         }
 
         return messageResponse;
     }
+
+    private record PreparedMessage(Message message, File file) {}
 
     // Metrics helper methods
     private Timer createTimer(String status, String messageType) {
