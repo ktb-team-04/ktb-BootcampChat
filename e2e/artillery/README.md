@@ -50,6 +50,9 @@
     - 기본값: 2000
   - FORBIDDEN_WORDS: 금칙어 목록 (쉼표로 구분)
     - 기본값: "b3sig78jv,9c0hej6x,lbl276sz"
+  - E2E_IMAGE_FIXTURE: 첨부 이미지 크기 선택
+    - `light` 또는 미설정: 약 50KB 인메모리 PNG (기본값)
+    - `original`: `fixtures/images/profile.jpg` 원본 이미지
 
   ### 예시
 
@@ -68,6 +71,9 @@
 
   # 커스텀 금칙어로 테스트
   FORBIDDEN_WORDS="word1,word2,word3" make artillery
+
+  # 원본 이미지로 파일 대역폭까지 검증
+  E2E_IMAGE_FIXTURE=original PHASE1_ARRIVAL_COUNT=3 make artillery
   ```
 
 ## 디렉토리 구조
