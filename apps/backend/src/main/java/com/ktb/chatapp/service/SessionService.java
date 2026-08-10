@@ -19,6 +19,7 @@ public class SessionService {
     private final SessionStore sessionStore;
     public static final long SESSION_TTL_SEC = DurationStyle.detectAndParse(SESSION_TTL).getSeconds();
     private static final long SESSION_TIMEOUT = SESSION_TTL_SEC * 1000;
+    private static final long SESSION_TOUCH_INTERVAL = 60_000;
 
     private String generateSessionId() {
         return UUID.randomUUID().toString().replace("-", "");
@@ -94,10 +95,19 @@ public class SessionService {
                 return SessionValidationResult.invalid("SESSION_EXPIRED", "세션이 만료되었습니다.");
             }
 
-            // Update last activity
-            session.setLastActivity(now);
-            session.setExpiresAt(Instant.now().plusSeconds(SESSION_TTL_SEC));
-            session = sessionStore.save(session);
+            // 인증 요청마다 MongoDB에 쓰면 HTTP와 WebSocket 요청이 겹칠 때 저장 부하가
+            // 커지고, 활동 시간 저장의 일시적인 실패가 유효한 요청을 401로 바꿀 수 있다.
+            // 세션의 유효성은 위 조회 결과로 이미 확인했으므로 갱신은 주기적으로,
+            // 그리고 인증 성공 여부와 분리된 best-effort 작업으로 처리한다.
+            if (now - session.getLastActivity() >= SESSION_TOUCH_INTERVAL) {
+                try {
+                    session.setLastActivity(now);
+                    session.setExpiresAt(Instant.now().plusSeconds(SESSION_TTL_SEC));
+                    session = sessionStore.save(session);
+                } catch (Exception e) {
+                    log.warn("Failed to refresh activity for valid session: userId={}", userId, e);
+                }
+            }
 
             SessionData sessionData = toSessionData(session);
             return SessionValidationResult.valid(sessionData);
