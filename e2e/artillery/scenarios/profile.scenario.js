@@ -2,10 +2,9 @@ const {
     goToProfileAction,
 } = require('../../actions/profile.actions');
 const { expect } = require('@playwright/test');
-const path = require('path');
+const { getLoadImageFixture } = require('../../fixtures/loadImageFixture');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-const PROFILE_IMAGE_PATH = path.resolve(__dirname, '../../fixtures/images/profile.jpg');
 
 // Action 간 timeout 설정 (환경변수로 조절 가능)
 const ACTION_TIMEOUT = parseInt(process.env.ACTION_TIMEOUT || '1000', 10);
@@ -22,7 +21,7 @@ async function fullProfileUpdateScenario(page, vuContext) {
         await page.waitForTimeout(ACTION_TIMEOUT_SHORT);
 
         // 2. 이미지 업로드
-        await page.getByTestId('profile-image-file-input').setInputFiles(PROFILE_IMAGE_PATH);
+        await page.getByTestId('profile-image-file-input').setInputFiles(getLoadImageFixture());
         await page.waitForTimeout(ACTION_TIMEOUT);
 
         // 2-1. 이미지 업로드 검증

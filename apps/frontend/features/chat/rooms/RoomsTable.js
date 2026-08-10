@@ -82,7 +82,9 @@ const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
                   size="md"
                   onClick={() => onJoinRoom(room._id)}
                   disabled={connectionStatus !== CONNECTION_STATUS.CONNECTED}
-                  data-testid="join-chat-room-button"
+                  data-testid={room.hasPassword
+                    ? 'join-protected-chat-room-button'
+                    : 'join-chat-room-button'}
                 >
                   입장
                 </Button>

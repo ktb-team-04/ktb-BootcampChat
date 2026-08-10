@@ -200,7 +200,6 @@ public class AuthController {
                 throw new UsernameNotFoundException("Invalid credentials");
             }
 
-            // Create new session
             SessionMetadata metadata = new SessionMetadata(
                     request.getHeader("User-Agent"),
                     getClientIpAddress(request),

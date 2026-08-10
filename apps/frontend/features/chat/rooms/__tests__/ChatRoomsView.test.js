@@ -7,6 +7,7 @@ import { CONNECTION_STATUS } from '../useServerConnection';
 const mocks = vi.hoisted(() => ({
   connectionStatus: 'checking',
   error: null,
+  rooms: [],
   fetchRooms: vi.fn(() => Promise.resolve()),
   refreshRooms: vi.fn(() => Promise.resolve(true)),
   attemptConnection: vi.fn(() => Promise.resolve(true)),
@@ -41,7 +42,7 @@ vi.mock('../useServerConnection', async () => {
 
 vi.mock('../useRoomList', () => ({
   useRoomList: () => ({
-    rooms: [],
+    rooms: mocks.rooms,
     setRooms: vi.fn(),
     error: mocks.error,
     loading: false,
@@ -61,6 +62,7 @@ describe('ChatRoomsView', () => {
   beforeEach(() => {
     mocks.connectionStatus = CONNECTION_STATUS.CHECKING;
     mocks.error = null;
+    mocks.rooms = [];
     mocks.fetchRooms.mockClear();
     mocks.refreshRooms.mockClear();
     mocks.attemptConnection.mockClear();
@@ -143,5 +145,23 @@ describe('ChatRoomsView', () => {
     });
 
     expect(screen.queryByTestId('refresh-rooms-button')).toBeNull();
+  });
+
+  it('marks the list as having no joinable rooms when every room is protected', () => {
+    mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
+    mocks.rooms = [{
+      _id: 'protected-room',
+      name: 'protected',
+      hasPassword: true,
+      participants: [],
+      recentMessageCount: 0,
+      createdAt: '2026-08-10T00:00:00.000Z',
+    }];
+
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    expect(screen.getByTestId('rooms-empty')).toBeTruthy();
+    expect(screen.queryByTestId('join-chat-room-button')).toBeNull();
+    expect(screen.getByTestId('join-protected-chat-room-button')).toBeTruthy();
   });
 });

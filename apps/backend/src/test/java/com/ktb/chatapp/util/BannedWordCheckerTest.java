@@ -54,4 +54,13 @@ class BannedWordCheckerTest {
         assertFalse(checker.containsBannedWord(null));
         assertFalse(checker.containsBannedWord("   "));
     }
+
+    @Test
+    void containsBannedWord_isCaseInsensitiveAndHandlesOverlappingPrefixes() {
+        BannedWordChecker checker = new BannedWordChecker(Set.of("forbidden", "forbid", "bidden"));
+
+        assertTrue(checker.containsBannedWord("prefix-FORBIDDEN-suffix"));
+        assertTrue(checker.containsBannedWord("this is forbidden"));
+        assertFalse(checker.containsBannedWord("this is allowed"));
+    }
 }
