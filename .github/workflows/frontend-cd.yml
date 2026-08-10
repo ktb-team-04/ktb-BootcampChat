@@ -105,7 +105,7 @@ jobs:
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           touch ~/.ssh/known_hosts
           hosts="$(printf '%s' "$FRONTEND_DEPLOY_HOSTS" | tr -d '\r' | xargs)"
@@ -124,21 +124,21 @@ jobs:
           remote_script="$(mktemp)"
           cat > "$remote_script" <<'SCRIPT'
           set -euo pipefail
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-          docker pull "$IMAGE_URI"
-          docker stop "$CONTAINER_NAME" 2>/dev/null || true
-          docker rm "$CONTAINER_NAME" 2>/dev/null || true
+          printf '%s' "$GHCR_TOKEN" | sudo docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+          sudo docker pull "$IMAGE_URI"
+          sudo docker stop "$CONTAINER_NAME" 2>/dev/null || true
+          sudo docker rm "$CONTAINER_NAME" 2>/dev/null || true
           env_file_arg=()
           if [ -n "$ENV_FILE" ]; then
             env_file_arg=(--env-file "$ENV_FILE")
           fi
           read -r -a port_args <<< "$PORTS"
-          docker run -d --name "$CONTAINER_NAME" --restart unless-stopped "${env_file_arg[@]}" "${port_args[@]}" "$IMAGE_URI"
+          sudo docker run -d --name "$CONTAINER_NAME" --restart unless-stopped "${env_file_arg[@]}" "${port_args[@]}" "$IMAGE_URI"
           for i in $(seq 1 30); do
             curl -fsS "$HEALTH_URL" >/dev/null && exit 0
             sleep 2
           done
-          docker logs --tail 100 "$CONTAINER_NAME"
+          sudo docker logs --tail 100 "$CONTAINER_NAME"
           exit 1
           SCRIPT
 
