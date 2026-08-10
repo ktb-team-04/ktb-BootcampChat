@@ -1,0 +1,59 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - "apps/backend/**"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - "apps/backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    env:
+      JWT_SECRET: ci_jwt_secret_for_tests
+      ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      ENCRYPTION_SALT: 31323334353637383132333435363738
+      MONGO_URI: mongodb://localhost:27017/bootcamp-chat-ci
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      OPENAI_API_KEY: test-key
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Make Maven wrapper executable
+        run: chmod +x ./mvnw
+
+      - name: Run unit tests
+        run: ./mvnw -B -Punit-tests test

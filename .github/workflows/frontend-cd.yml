@@ -1,0 +1,150 @@
+name: Frontend CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/frontend/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/frontend-cd.yml"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Redeploy an existing frontend image tag. Defaults to the current commit SHA."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: frontend-cd-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      GHCR_REGISTRY: ghcr.io
+      FRONTEND_IMAGE_NAME: ${{ vars.FRONTEND_IMAGE_NAME || format('{0}-frontend', github.event.repository.name) }}
+      FRONTEND_DEPLOY_HOSTS: ${{ vars.FRONTEND_DEPLOY_HOSTS }}
+      FRONTEND_CONTAINER_NAME: ${{ vars.FRONTEND_CONTAINER_NAME || 'ktb-chat-frontend' }}
+      FRONTEND_ENV_FILE: ${{ vars.FRONTEND_ENV_FILE || '' }}
+      FRONTEND_PORTS: ${{ vars.FRONTEND_PORTS || '-p 3000:3000' }}
+      FRONTEND_HEALTH_URL: ${{ vars.FRONTEND_HEALTH_URL || 'http://localhost:3000' }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      NEXT_PUBLIC_SOCKET_URL: ${{ secrets.NEXT_PUBLIC_SOCKET_URL }}
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deployment config
+        run: |
+          test -n "$FRONTEND_IMAGE_NAME" || { echo "FRONTEND_IMAGE_NAME variable is required"; exit 1; }
+          test -n "$FRONTEND_DEPLOY_HOSTS" || { echo "FRONTEND_DEPLOY_HOSTS variable is required"; exit 1; }
+          test -n "$DEPLOY_USER" || { echo "DEPLOY_USER variable is required"; exit 1; }
+          test -n "$NEXT_PUBLIC_API_URL" || { echo "NEXT_PUBLIC_API_URL secret is required"; exit 1; }
+          test -n "$NEXT_PUBLIC_SOCKET_URL" || { echo "NEXT_PUBLIC_SOCKET_URL secret is required"; exit 1; }
+          test -n "${{ secrets.DEPLOY_SSH_KEY }}" || { echo "DEPLOY_SSH_KEY secret is required"; exit 1; }
+          test -n "${{ secrets.GHCR_USERNAME }}" || { echo "GHCR_USERNAME secret is required"; exit 1; }
+          test -n "${{ secrets.GHCR_TOKEN }}" || { echo "GHCR_TOKEN secret is required"; exit 1; }
+
+      - name: Resolve image tag
+        id: image
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.image_tag }}" ]; then
+            image_tag="${{ inputs.image_tag }}"
+          else
+            image_tag="${GITHUB_SHA}"
+          fi
+
+          image_owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          image_name="$(printf '%s' "${FRONTEND_IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+          image_uri="${GHCR_REGISTRY}/${image_owner}/${image_name}:${image_tag}"
+          echo "tag=${image_tag}" >> "$GITHUB_OUTPUT"
+          echo "uri=${image_uri}" >> "$GITHUB_OUTPUT"
+          echo "Frontend image: ${image_uri}"
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: github.event_name == 'push'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/frontend/Dockerfile
+          push: true
+          tags: ${{ steps.image.outputs.uri }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ env.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_SOCKET_URL=${{ env.NEXT_PUBLIC_SOCKET_URL }}
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          touch ~/.ssh/known_hosts
+          for host in $FRONTEND_DEPLOY_HOSTS; do
+            ssh-keyscan -H "$host" >> ~/.ssh/known_hosts
+          done
+
+      - name: Deploy over SSH
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          remote_script="$(mktemp)"
+          cat > "$remote_script" <<'SCRIPT'
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+          docker pull "$IMAGE_URI"
+          docker stop "$CONTAINER_NAME" 2>/dev/null || true
+          docker rm "$CONTAINER_NAME" 2>/dev/null || true
+          env_file_arg=()
+          if [ -n "$ENV_FILE" ]; then
+            env_file_arg=(--env-file "$ENV_FILE")
+          fi
+          read -r -a port_args <<< "$PORTS"
+          docker run -d --name "$CONTAINER_NAME" --restart unless-stopped "${env_file_arg[@]}" "${port_args[@]}" "$IMAGE_URI"
+          for i in $(seq 1 30); do
+            curl -fsS "$HEALTH_URL" >/dev/null && exit 0
+            sleep 2
+          done
+          docker logs --tail 100 "$CONTAINER_NAME"
+          exit 1
+          SCRIPT
+
+          for host in $FRONTEND_DEPLOY_HOSTS; do
+            echo "Deploying frontend to $host"
+            ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$host" \
+              "IMAGE_URI='$IMAGE_URI' CONTAINER_NAME='$FRONTEND_CONTAINER_NAME' ENV_FILE='$FRONTEND_ENV_FILE' PORTS='$FRONTEND_PORTS' HEALTH_URL='$FRONTEND_HEALTH_URL' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN' bash -s" < "$remote_script"
+          done
+
+          rm -f "$remote_script"
