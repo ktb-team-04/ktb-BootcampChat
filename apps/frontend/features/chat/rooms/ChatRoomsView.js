@@ -229,11 +229,18 @@ export default function ChatRoomsView({ router }) {
             <LoadingIndicator text="채팅방 목록을 불러오는 중..." />
           </Box>
         ) : rooms.length > 0 ? (
-          <RoomsTable
-            rooms={rooms}
-            connectionStatus={connectionStatus}
-            onJoinRoom={handleJoinRoom}
-          />
+          <VStack $css={{ gap: '$200', width: '100%' }}>
+            {!rooms.some((room) => !room.hasPassword) && (
+              <Text data-testid="rooms-empty" typography="body2">
+                입장 가능한 공개 채팅방이 없습니다.
+              </Text>
+            )}
+            <RoomsTable
+              rooms={rooms}
+              connectionStatus={connectionStatus}
+              onJoinRoom={handleJoinRoom}
+            />
+          </VStack>
         ) : !error && (
           <VStack
             $css={{ gap: '$300', alignItems: 'center', padding: '$400' }}
