@@ -99,7 +99,8 @@ jobs:
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           touch ~/.ssh/known_hosts
-          for host in $BACKEND_DEPLOY_HOSTS; do
+          hosts="$(printf '%s' "$BACKEND_DEPLOY_HOSTS" | tr -d '\r' | xargs)"
+          for host in $hosts; do
             ssh-keyscan -H "$host" >> ~/.ssh/known_hosts
           done
 
@@ -135,7 +136,8 @@ jobs:
           exit 1
           SCRIPT
 
-          for host in $BACKEND_DEPLOY_HOSTS; do
+          hosts="$(printf '%s' "$BACKEND_DEPLOY_HOSTS" | tr -d '\r' | xargs)"
+          for host in $hosts; do
             echo "Deploying backend to $host"
             ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$host" \
               "IMAGE_URI='$IMAGE_URI' CONTAINER_NAME='$BACKEND_CONTAINER_NAME' ENV_FILE='$BACKEND_ENV_FILE' PORTS='$BACKEND_PORTS' HEALTH_URL='$BACKEND_HEALTH_URL' SYSTEMD_SERVICE='$BACKEND_SYSTEMD_SERVICE' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN' bash -s" < "$remote_script"
