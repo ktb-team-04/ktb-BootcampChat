@@ -24,6 +24,11 @@ public interface SessionStore {
      * @return the saved session
      */
     Session save(Session session);
+
+    /**
+     * 사용자별 활성 세션을 단일 저장소 연산으로 교체한다.
+     */
+    Session replace(Session session);
     
     /**
      * Delete all sessions for a user
