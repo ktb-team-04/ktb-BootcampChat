@@ -175,10 +175,7 @@ public class AuthController {
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
             
-            // 단일 세션 정책을 위해 기존 세션 제거
-            sessionService.removeAllUserSessions(user.getId());
-
-            // Create new session
+            // createSession이 단일 세션 정책에 따라 기존 세션을 제거하고 새 세션을 만든다.
             SessionMetadata metadata = new SessionMetadata(
                     request.getHeader("User-Agent"),
                     getClientIpAddress(request),
