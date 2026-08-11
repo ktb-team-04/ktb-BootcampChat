@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,7 +53,7 @@ class RoomServiceUnitTest {
                 passwordEncoder,
                 eventPublisher,
                 Duration.ofSeconds(2),
-                1000);
+                50);
     }
 
     @Test
@@ -63,7 +64,8 @@ class RoomServiceUnitTest {
         Room firstRoom = room("room-1", "user-1", Set.of("user-1", "user-2"));
         Room secondRoom = room("room-2", "user-2", Set.of("user-2"));
 
-        when(roomRepository.findAll()).thenReturn(List.of(firstRoom, secondRoom));
+        when(roomRepository.findRecentRooms(any(Pageable.class)))
+                .thenReturn(List.of(firstRoom, secondRoom));
         when(userRepository.findAllById(anySet())).thenReturn(List.of(first, second));
         when(recentMessageCounter.countRecentMessages(List.of("room-1", "room-2")))
                 .thenReturn(Map.of("room-1", 7, "room-2", 3));
@@ -85,23 +87,28 @@ class RoomServiceUnitTest {
     }
 
     @Test
-    @DisplayName("방 목록은 사용자별 로컬 캐시를 사용한다")
-    void getAllRooms_UsesLocalCachePerUser() {
+    @DisplayName("방 목록 캐시는 사용자와 무관하게 공유되고 isCreator만 요청자별로 계산된다")
+    void getAllRooms_SharesCacheAcrossUsers() {
         User first = User.builder().id("user-1").name("first").email("first@example.com").build();
         Room firstRoom = room("room-1", "user-1", Set.of("user-1"));
 
-        when(roomRepository.findAll()).thenReturn(List.of(firstRoom));
+        when(roomRepository.findRecentRooms(any(Pageable.class))).thenReturn(List.of(firstRoom));
         when(userRepository.findAllById(anySet())).thenReturn(List.of(first));
         when(recentMessageCounter.countRecentMessages(List.of("room-1")))
                 .thenReturn(Map.of("room-1", 7));
 
-        roomService.getAllRooms("first@example.com");
-        roomService.getAllRooms("first@example.com");
+        RoomsResponse creatorView = roomService.getAllRooms("first@example.com");
+        RoomsResponse otherView = roomService.getAllRooms("second@example.com");
 
-        verify(roomRepository, times(1)).findAll();
+        // 서로 다른 사용자가 요청해도 무거운 조회는 한 번만 일어난다.
+        verify(roomRepository, times(1)).findRecentRooms(any(Pageable.class));
         verify(userRepository, times(1)).findAllById(anySet());
         verify(recentMessageCounter, times(1))
                 .countRecentMessages(List.of("room-1"));
+
+        // 캐시를 공유하면서도 isCreator는 요청자에 맞게 달라진다.
+        assertThat(creatorView.getData().getFirst().isCreator()).isTrue();
+        assertThat(otherView.getData().getFirst().isCreator()).isFalse();
     }
 
     @Test
