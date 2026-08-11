@@ -31,6 +31,7 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final RecentMessageCounter recentMessageCounter;
+    private final ChatLookupCache chatLookupCache;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -138,6 +139,7 @@ public class RoomService {
         }
 
         Room savedRoom = roomRepository.save(room);
+        chatLookupCache.invalidateRoom(savedRoom.getId());
         
         // Publish event for room created
         try {
@@ -176,6 +178,7 @@ public class RoomService {
             // 채팅방 참여
             room.getParticipantIds().add(user.getId());
             room = roomRepository.save(room);
+            chatLookupCache.invalidateRoom(room.getId());
         }
         
         // Publish event for room updated

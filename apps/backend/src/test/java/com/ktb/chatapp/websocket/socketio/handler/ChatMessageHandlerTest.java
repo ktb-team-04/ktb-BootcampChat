@@ -8,12 +8,9 @@ import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
-import com.ktb.chatapp.model.Room;
-import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
-import com.ktb.chatapp.repository.RoomRepository;
-import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.ChatLookupCache;
 import com.ktb.chatapp.service.RateLimitCheckResult;
 import com.ktb.chatapp.service.RateLimitService;
 import com.ktb.chatapp.service.RoomActivityNotifier;
@@ -25,7 +22,6 @@ import com.ktb.chatapp.websocket.socketio.ai.AiService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,8 +42,7 @@ class ChatMessageHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
     @Mock private MessageRepository messageRepository;
-    @Mock private RoomRepository roomRepository;
-    @Mock private UserRepository userRepository;
+    @Mock private ChatLookupCache chatLookupCache;
     @Mock private FileRepository fileRepository;
     @Mock private AiService aiService;
     @Mock private SessionService sessionService;
@@ -64,8 +59,7 @@ class ChatMessageHandlerTest {
                 new ChatMessageHandler(
                         socketIOServer,
                         messageRepository,
-                        roomRepository,
-                        userRepository,
+                        chatLookupCache,
                         fileRepository,
                         aiService,
                         sessionService,
@@ -89,14 +83,9 @@ class ChatMessageHandlerTest {
         when(rateLimitService.checkRateLimit(eq(socketUser.id()), anyInt(), any()))
                 .thenReturn(allowedResult);
 
-        User user = new User();
-        user.setId("user-1");
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
-
-        Room room = new Room();
-        room.setId("room-1");
-        room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(chatLookupCache.findUser("user-1"))
+                .thenReturn(Optional.of(com.ktb.chatapp.dto.UserResponse.builder().id("user-1").build()));
+        when(chatLookupCache.canAccessRoom("room-1", "user-1")).thenReturn(true);
 
         ChatMessageRequest request =
                 ChatMessageRequest.builder()
@@ -129,15 +118,10 @@ class ChatMessageHandlerTest {
         when(rateLimitService.checkRateLimit(eq(socketUser.id()), anyInt(), any()))
                 .thenReturn(RateLimitCheckResult.allowed(10000, 9999, 60, System.currentTimeMillis() / 1000 + 60, 60));
 
-        User user = new User();
-        user.setId("user-1");
-        user.setName("Tester");
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
-
-        Room room = new Room();
-        room.setId("room-1");
-        room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(chatLookupCache.findUser("user-1"))
+                .thenReturn(Optional.of(com.ktb.chatapp.dto.UserResponse.builder()
+                        .id("user-1").name("Tester").build()));
+        when(chatLookupCache.canAccessRoom("room-1", "user-1")).thenReturn(true);
         when(bannedWordChecker.containsBannedWord("hello")).thenReturn(false);
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
@@ -177,15 +161,10 @@ class ChatMessageHandlerTest {
                 .thenReturn(RateLimitCheckResult.allowed(
                         10000, 9999, 60, System.currentTimeMillis() / 1000 + 60, 60));
 
-        User user = new User();
-        user.setId("user-1");
-        user.setName("Tester");
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
-
-        Room room = new Room();
-        room.setId("room-1");
-        room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(chatLookupCache.findUser("user-1"))
+                .thenReturn(Optional.of(com.ktb.chatapp.dto.UserResponse.builder()
+                        .id("user-1").name("Tester").build()));
+        when(chatLookupCache.canAccessRoom("room-1", "user-1")).thenReturn(true);
         when(bannedWordChecker.containsBannedWord("file message")).thenReturn(false);
 
         File file = File.builder()

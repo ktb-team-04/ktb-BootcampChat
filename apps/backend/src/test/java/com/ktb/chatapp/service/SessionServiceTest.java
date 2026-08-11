@@ -1,12 +1,20 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.config.MongoTestContainer;
+import com.ktb.chatapp.config.RedisTestContainer;
+import com.ktb.chatapp.model.Session;
+import com.ktb.chatapp.repository.SessionRepository;
+import com.ktb.chatapp.service.session.SessionRedisStore;
+import com.ktb.chatapp.service.session.SessionStore;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,11 +22,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * SessionService 통합 테스트
- * SessionService의 공개 API만 사용하는 비침투적(Non-invasive) 테스트
- * 백엔드 저장소(Redis/MongoDB)가 변경되어도 테스트 코드 수정이 불필요
+ * SessionService 공개 API와 Redis 저장소의 TTL/원자성 계약을 검증
  */
 @SpringBootTest
-@Import(MongoTestContainer.class)
+@Import({MongoTestContainer.class, RedisTestContainer.class})
 @TestPropertySource(properties = {
     "socketio.enabled=false"
 })
@@ -27,6 +34,18 @@ class SessionServiceTest {
 
     @Autowired
     private SessionService sessionService;
+
+    @Autowired
+    private SessionStore sessionStore;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    private SessionRepository sessionRepository;
+
+    @Value("${app.session.redis.key-prefix:chat:session:user:}")
+    private String sessionKeyPrefix;
 
     private static final String TEST_USER_ID = "test-user-123";
     private static final String TEST_USER_ID_2 = "test-user-456";
@@ -67,6 +86,10 @@ class SessionServiceTest {
         assertNotNull(result.getSessionData());
         assertEquals(TEST_USER_ID, result.getSessionData().getUserId());
         assertEquals(result.getSessionId(), result.getSessionData().getSessionId());
+        assertThat(sessionStore).isInstanceOf(SessionRedisStore.class);
+        assertThat(redisTemplate.getExpire(sessionKeyPrefix + TEST_USER_ID, TimeUnit.SECONDS))
+                .isBetween(1790L, 1800L);
+        assertThat(sessionRepository.findByUserId(TEST_USER_ID)).isEmpty();
     }
 
     @Test
@@ -91,6 +114,39 @@ class SessionServiceTest {
         // 두 번째 세션은 유효
         validationResult = sessionService.validateSession(TEST_USER_ID, secondSessionId);
         assertTrue(validationResult.isValid());
+    }
+
+    @Test
+    @DisplayName("이전 세션 로그아웃은 새 세션을 제거하지 않음")
+    void removeOldSession_DoesNotDeleteReplacement() {
+        SessionMetadata metadata = createTestMetadata();
+        SessionCreationResult firstSession = sessionService.createSession(TEST_USER_ID, metadata);
+        SessionCreationResult secondSession = sessionService.createSession(TEST_USER_ID, metadata);
+
+        sessionService.removeSession(TEST_USER_ID, firstSession.getSessionId());
+
+        SessionValidationResult result =
+                sessionService.validateSession(TEST_USER_ID, secondSession.getSessionId());
+        assertTrue(result.isValid());
+    }
+
+    @Test
+    @DisplayName("이전 세션 활동 갱신은 새 세션을 덮어쓰지 않음")
+    void updateOldSession_DoesNotOverwriteReplacement() {
+        SessionMetadata metadata = createTestMetadata();
+        SessionCreationResult firstSession = sessionService.createSession(TEST_USER_ID, metadata);
+        Session staleSession = sessionStore.findByUserId(TEST_USER_ID).orElseThrow();
+        SessionCreationResult secondSession = sessionService.createSession(TEST_USER_ID, metadata);
+
+        staleSession.setLastActivity(System.currentTimeMillis());
+        sessionStore.save(staleSession);
+
+        assertFalse(sessionService
+                .validateSession(TEST_USER_ID, firstSession.getSessionId())
+                .isValid());
+        assertTrue(sessionService
+                .validateSession(TEST_USER_ID, secondSession.getSessionId())
+                .isValid());
     }
 
     @Test

@@ -1,21 +1,31 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.config.MongoTestContainer;
+import com.ktb.chatapp.config.RedisTestContainer;
 import com.ktb.chatapp.repository.RateLimitRepository;
+import com.ktb.chatapp.service.ratelimit.RateLimitRedisStore;
+import com.ktb.chatapp.service.ratelimit.RateLimitStore;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
-@Import(MongoTestContainer.class)
+@Import({MongoTestContainer.class, RedisTestContainer.class})
 @TestPropertySource(properties = {
         "socketio.enabled=false"
 })
@@ -28,9 +38,19 @@ class RateLimitServiceTest {
     @Autowired
     private RateLimitService rateLimitService;
 
+    @Autowired
+    private RateLimitStore rateLimitStore;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
     @BeforeEach
     void setUp() {
         rateLimitRepository.deleteAll();
+        var keys = redisTemplate.keys("chat:rate-limit:*");
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
     }
 
     @Test
@@ -52,6 +72,8 @@ class RateLimitServiceTest {
         assertThat(result.retryAfterSeconds()).isPositive();
         assertThat(result.resetEpochSeconds())
                 .isBetween(beforeCall + result.retryAfterSeconds(), afterCall + result.retryAfterSeconds());
+        assertThat(rateLimitStore).isInstanceOf(RateLimitRedisStore.class);
+        assertThat(rateLimitRepository.findByClientId(clientId)).isEmpty();
     }
 
     @Test
@@ -130,5 +152,41 @@ class RateLimitServiceTest {
                 rateLimitService.checkRateLimit(clientId2, maxRequests, window);
         assertThat(result2.allowed()).isTrue();
         assertThat(result2.remaining()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("동시 요청도 한도만큼만 정확히 허용한다")
+    void checkRateLimit_ConcurrentRequests_AreAtomic() throws Exception {
+        int attempts = 60;
+        int maxRequests = 20;
+        String clientId = "user:concurrent-user";
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(16);
+        List<Future<Boolean>> results = new ArrayList<>();
+
+        try {
+            for (int i = 0; i < attempts; i++) {
+                results.add(executor.submit(() -> {
+                    start.await();
+                    return rateLimitService
+                            .checkRateLimit(clientId, maxRequests, Duration.ofSeconds(60))
+                            .allowed();
+                }));
+            }
+            start.countDown();
+
+            long allowed = 0;
+            for (Future<Boolean> result : results) {
+                if (result.get()) {
+                    allowed++;
+                }
+            }
+
+            assertThat(allowed).isEqualTo(maxRequests);
+            assertThat(redisTemplate.opsForValue().get("chat:rate-limit:" + clientId))
+                    .isEqualTo(Integer.toString(attempts));
+        } finally {
+            executor.shutdownNow();
+        }
     }
 }

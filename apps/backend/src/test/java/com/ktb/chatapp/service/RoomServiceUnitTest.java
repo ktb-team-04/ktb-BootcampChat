@@ -31,6 +31,7 @@ class RoomServiceUnitTest {
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private RecentMessageCounter recentMessageCounter;
+    @Mock private ChatLookupCache chatLookupCache;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private ApplicationEventPublisher eventPublisher;
 

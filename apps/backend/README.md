@@ -91,6 +91,20 @@ make verify-java
 | `MONGO_URI` | ✅ | 없음 | MongoDB 연결 문자열              |
 | `REDIS_HOST` | ✅ | 없음 | Redis 호스트                    |
 | `REDIS_PORT` | ✅ | 없음 | Redis 포트                      |
+| `REDIS_USERNAME` | ❌ | 없음 | Redis ACL 사용자 이름 |
+| `REDIS_DATABASE` | ❌ | `0` | Redis 논리 데이터베이스 번호 |
+| `REDIS_SSL_ENABLED` | ❌ | `false` | Redis TLS 사용 여부 |
+| `SESSION_STORE` | ❌ | `redis` | 세션 저장소 (`redis` 또는 롤백용 `mongo`) |
+| `SESSION_REDIS_KEY_PREFIX` | ❌ | `chat:session:user:` | 사용자별 Redis 세션 키 접두사 |
+| `SESSION_REDIS_TTL` | ❌ | `30m` | Redis 세션 만료 시간 |
+| `RATE_LIMIT_STORE` | ❌ | `redis` | Rate limit 저장소 (`redis` 또는 롤백용 `mongo`) |
+| `RATE_LIMIT_REDIS_KEY_PREFIX` | ❌ | `chat:rate-limit:` | Redis rate limit 키 접두사 |
+| `RECENT_MESSAGE_CACHE_KEY_PREFIX` | ❌ | `chat:recent-message-count:` | 최근 메시지 수 캐시 키 접두사 |
+| `RECENT_MESSAGE_CACHE_TTL` | ❌ | `5s` | 최근 30분 메시지 수의 캐시 유지 시간 |
+| `SOCKETIO_STORE_TYPE` | ❌ | `redis` | Socket.IO 상태 저장소 (`redis` 또는 단일 노드용 `memory`) |
+| `SOCKETIO_REDIS_DATA_KEY_PREFIX` | ❌ | `chat:socketio:data:` | 접속 사용자·사용자별 방 상태 키 접두사 |
+| `SOCKETIO_REDIS_CONNECTION_POOL_SIZE` | ❌ | `16` | Socket.IO Redisson 일반 연결 풀 크기 |
+| `SOCKETIO_REDIS_SUBSCRIPTION_POOL_SIZE` | ❌ | `8` | Socket.IO Redisson Pub/Sub 연결 풀 크기 |
 | `PORT` | ❌ | `5001` | HTTP API 포트 (`server.port`) |
 | `WS_PORT` | ❌ | `5002` | Socket.IO 서버 포트             |
 | `CORS_ALLOWED_ORIGINS` | ❌ | `*` | REST API CORS 허용 Origin 목록. 쉼표로 구분 |
@@ -100,6 +114,27 @@ make verify-java
 | `OPENAI_API_KEY` | ❌ | `your_openai_api_key_here` | OpenAI 호출용 API Key          |
 
 `.env.template` 파일을 복사해 기본 값을 채운 뒤 필요에 따라 수정하세요.
+
+### 최근 메시지 수 캐시
+
+채팅방 목록의 `recentMessageCount`는 최근 30분 메시지를 대상으로 하지만, 요청마다 MongoDB에서
+방별 count를 반복하지 않습니다. 방 목록 조회 시 Redis `MGET`으로 모든 방의 캐시를 한 번에 읽고,
+캐시가 없는 방만 MongoDB aggregation 한 번으로 묶어서 계산합니다. 메시지 저장 후에는 캐시가
+존재하는 동안 Redis Lua `INCR`로 값을 갱신합니다.
+
+기본 TTL은 5초이며 메시지가 계속 들어와도 연장하지 않습니다. 따라서 최대 TTL 동안 근사값일 수
+있지만 주기적으로 MongoDB 원본과 다시 동기화되어 장기 누적 오차를 방지합니다. MongoDB에는
+`room_timestamp_idx` 복합 인덱스를 애플리케이션 시작 시 보장합니다.
+
+### Socket.IO 분산 상태
+
+기본 `SOCKETIO_STORE_TYPE=redis` 설정에서는 Socket.IO room과 broadcast가 Redisson Pub/Sub를
+통해 모든 백엔드 노드에 전달됩니다. 접속 사용자와 사용자별 참여 방도 같은 Redis 서버에 저장하므로,
+로드밸런서가 서로 다른 노드로 연결을 분산해도 애플리케이션 상태를 공유합니다. 사용자별 방 추가·삭제와
+상태 인덱스 갱신은 Lua script 한 번으로 원자 처리합니다.
+
+개발 중 Redis 없이 단일 노드만 실행해야 할 때는 `SOCKETIO_STORE_TYPE=memory`로 되돌릴 수 있습니다.
+이 설정은 노드 간 이벤트와 상태를 공유하지 않으므로 다중 인스턴스 배포에는 사용하면 안 됩니다.
 
 예시:
 ```bash
