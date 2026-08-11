@@ -27,14 +27,37 @@ export const useRoomList = ({
   const [joiningRoom, setJoiningRoom] = useState(false);
 
   const isLoadingRef = useRef(false);
+  const isJoiningRoomRef = useRef(false);
   const joinNavigationFallbackRef = useRef(null);
+  const joinNavigationTargetRef = useRef(null);
 
   const clearJoinNavigationFallback = useCallback(() => {
     if (joinNavigationFallbackRef.current) {
       clearTimeout(joinNavigationFallbackRef.current);
       joinNavigationFallbackRef.current = null;
     }
+    joinNavigationTargetRef.current = null;
   }, []);
+
+  const scheduleJoinNavigationFallback = useCallback((roomPath) => {
+    clearJoinNavigationFallback();
+    joinNavigationTargetRef.current = roomPath;
+
+    joinNavigationFallbackRef.current = setTimeout(() => {
+      if (joinNavigationTargetRef.current !== roomPath) {
+        return;
+      }
+
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+      if (currentPath === roomPath) {
+        joinNavigationFallbackRef.current = null;
+        joinNavigationTargetRef.current = null;
+        return;
+      }
+
+      hardNavigate(roomPath);
+    }, ROOM_JOIN_NAVIGATION_FALLBACK_MS);
+  }, [clearJoinNavigationFallback, hardNavigate]);
 
   const handleFetchError = useCallback((error) => {
     let errorMessage = '채팅방 목록을 불러오는데 실패했습니다.';
@@ -146,6 +169,10 @@ export const useRoomList = ({
   }, [currentUser, loadRooms]);
 
   const handleJoinRoom = useCallback(async (roomId) => {
+    if (isJoiningRoomRef.current) {
+      return;
+    }
+
     if (connectionStatus !== CONNECTION_STATUS.CONNECTED) {
       setError({
         title: '채팅방 입장 실패',
@@ -155,7 +182,9 @@ export const useRoomList = ({
       return;
     }
 
+    isJoiningRoomRef.current = true;
     setJoiningRoom(true);
+    let navigationStarted = false;
 
     try {
       const response = await axiosInstance.post(`/api/rooms/${roomId}/join`, {});
@@ -163,17 +192,13 @@ export const useRoomList = ({
       if (response.data.success) {
         const roomPath = `/chat/${roomId}`;
 
-        clearJoinNavigationFallback();
-        joinNavigationFallbackRef.current = setTimeout(() => {
-          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-          if (currentPath !== roomPath) {
-            hardNavigate(roomPath);
-          }
-        }, ROOM_JOIN_NAVIGATION_FALLBACK_MS);
+        navigationStarted = true;
+        scheduleJoinNavigationFallback(roomPath);
 
         await Promise.resolve(router.push(roomPath));
       }
     } catch (error) {
+      navigationStarted = false;
       let errorMessage = '입장에 실패했습니다.';
       if (error.response?.status === 404) {
         errorMessage = '채팅방을 찾을 수 없습니다.';
@@ -186,10 +211,14 @@ export const useRoomList = ({
         message: error.response?.data?.message || errorMessage,
         type: 'danger',
       });
+      clearJoinNavigationFallback();
     } finally {
-      setJoiningRoom(false);
+      if (!navigationStarted) {
+        isJoiningRoomRef.current = false;
+        setJoiningRoom(false);
+      }
     }
-  }, [connectionStatus, router, clearJoinNavigationFallback, hardNavigate]);
+  }, [connectionStatus, router, clearJoinNavigationFallback, scheduleJoinNavigationFallback]);
 
   useEffect(() => clearJoinNavigationFallback, [clearJoinNavigationFallback]);
 

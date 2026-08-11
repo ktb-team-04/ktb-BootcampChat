@@ -242,6 +242,7 @@ export default function ChatRoomsView({ router }) {
             <RoomsTable
               rooms={rooms}
               connectionStatus={connectionStatus}
+              joiningRoom={joiningRoom}
               onJoinRoom={handleJoinRoom}
             />
           </VStack>
