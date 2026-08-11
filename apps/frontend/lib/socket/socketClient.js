@@ -23,6 +23,7 @@ const waitForSocketEvent = ({
   timeoutMs,
   timeoutMessage,
   send,
+  isSuccessPayload = () => true,
 }) => {
   ensureConnectedSocket(socket);
 
@@ -44,12 +45,18 @@ const waitForSocketEvent = ({
       callback(value);
     };
 
-    const handleSuccess = (data) => settle(resolve, data);
+    const handleSuccess = (data) => {
+      if (!isSuccessPayload(data)) {
+        return;
+      }
+
+      settle(resolve, data);
+    };
     const handleError = (error) => settle(reject, error);
 
-    socket.once(successEvent, handleSuccess);
+    socket.on(successEvent, handleSuccess);
     for (const event of errorEvents) {
-      socket.once(event, handleError);
+      socket.on(event, handleError);
     }
 
     timeoutId = setTimeout(() => {
@@ -110,6 +117,12 @@ const subscribeMappedEvents = (emitter, handlers, eventMap) => {
   };
 };
 
+const matchesChatMessagePayload = (payload, response) => (
+  response?.room === payload.room &&
+  response?.type === payload.type &&
+  response?.content === payload.content
+);
+
 export const createSocketClient = (service = socketService) => ({
   connect: (options) => service.connect(options),
   disconnect: () => service.disconnect(),
@@ -124,6 +137,7 @@ export const createSocketClient = (service = socketService) => ({
       errorEvents: ['error'],
       timeoutMs,
       timeoutMessage: '메시지 전송이 지연되고 있습니다. 다시 시도해주세요.',
+      isSuccessPayload: (response) => matchesChatMessagePayload(payload, response),
       send: () => sendDomainEvent(service, socket, 'chatMessage', payload),
     }),
   fetchPreviousMessages: (payload, socket) => sendDomainEvent(service, socket, 'fetchPreviousMessages', payload),

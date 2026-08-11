@@ -227,10 +227,54 @@ describe('socketClient', () => {
     const payload = { room: 'room-1', type: 'text', content: 'hello' };
 
     const send = client.sendChatMessageAndWait(payload, socket, { timeoutMs: 1000 });
-    socket.emitToClient('message', { id: 'message-1' });
+    socket.emitToClient('message', {
+      _id: 'message-1',
+      room: 'room-1',
+      type: 'text',
+      content: 'hello',
+    });
 
-    await expect(send).resolves.toEqual({ id: 'message-1' });
+    await expect(send).resolves.toEqual({
+      _id: 'message-1',
+      room: 'room-1',
+      type: 'text',
+      content: 'hello',
+    });
     expect(service.sendOn).toHaveBeenCalledWith(socket, 'chatMessage', payload);
+    expect(socket.listenerCount('message')).toBe(0);
+    expect(socket.listenerCount('error')).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('ignores unrelated message events while waiting for a sent chat message', async () => {
+    vi.useFakeTimers();
+    const socket = createEventSocket();
+    const service = {
+      sendOn: vi.fn(),
+    };
+    const client = createSocketClient(service);
+    const payload = { room: 'room-1', type: 'text', content: 'hello' };
+
+    const send = client.sendChatMessageAndWait(payload, socket, { timeoutMs: 1000 });
+    socket.emitToClient('message', {
+      _id: 'join-message-1',
+      room: 'room-1',
+      type: 'system',
+      content: 'Tester님이 입장하였습니다.',
+    });
+    socket.emitToClient('message', {
+      _id: 'message-1',
+      room: 'room-1',
+      type: 'text',
+      content: 'hello',
+    });
+
+    await expect(send).resolves.toEqual({
+      _id: 'message-1',
+      room: 'room-1',
+      type: 'text',
+      content: 'hello',
+    });
     expect(socket.listenerCount('message')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
     vi.useRealTimers();
