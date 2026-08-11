@@ -40,8 +40,14 @@ public class RoomService {
             // 모든 방의 사용자 정보를 한 번에 읽어 방/참가자 수에 비례하는 N+1 조회를 피한다.
             List<Room> rooms = roomRepository.findAll();
             Map<String, User> usersById = loadUsersById(rooms);
+            Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(
+                    rooms.stream().map(Room::getId).toList());
             List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(room, name, usersById))
+                .map(room -> mapToRoomResponse(
+                        room,
+                        name,
+                        usersById,
+                        recentMessageCounts.getOrDefault(room.getId(), 0)))
                 .sorted(Comparator.comparing(
                     RoomResponse::getCreatedAtDateTime,
                     Comparator.nullsLast(Comparator.reverseOrder())))
@@ -191,14 +197,26 @@ public class RoomService {
     private RoomResponse mapToRoomResponse(Room room, String name, Map<String, User> usersById) {
         if (room == null) return null;
 
+        return mapToRoomResponse(
+                room,
+                name,
+                usersById,
+                recentMessageCounter.countRecentMessages(room.getId()));
+    }
+
+    private RoomResponse mapToRoomResponse(
+            Room room,
+            String name,
+            Map<String, User> usersById,
+            int recentMessageCount) {
+        if (room == null) return null;
+
         User creator = usersById.get(room.getCreator());
 
         List<User> participants = room.getParticipantIds().stream()
             .map(usersById::get)
             .filter(java.util.Objects::nonNull)
             .toList();
-
-        int recentMessageCount = recentMessageCounter.countRecentMessages(room.getId());
 
         return RoomResponse.builder()
             .id(room.getId())
