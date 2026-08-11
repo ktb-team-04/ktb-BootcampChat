@@ -22,6 +22,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class RoomService {
 
+    /** 방 목록 캐시는 사용자와 무관하게 단일 엔트리로 유지한다. */
+    private static final String SHARED_ROOM_LIST_KEY = "all";
+
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final RecentMessageCounter recentMessageCounter;
@@ -37,6 +41,7 @@ public class RoomService {
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
     private final Cache<String, RoomsResponse> roomListCache;
+    private final int roomListLimit;
 
     public RoomService(
             RoomRepository roomRepository,
@@ -46,15 +51,16 @@ public class RoomService {
             PasswordEncoder passwordEncoder,
             ApplicationEventPublisher eventPublisher,
             @Value("${app.room-list.cache.ttl:2s}") Duration roomListCacheTtl,
-            @Value("${app.room-list.cache.max-size:1000}") long roomListCacheMaxSize) {
+            @Value("${app.room-list.limit:50}") int roomListLimit) {
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
         this.recentMessageCounter = recentMessageCounter;
         this.chatLookupCache = chatLookupCache;
         this.passwordEncoder = passwordEncoder;
         this.eventPublisher = eventPublisher;
+        this.roomListLimit = Math.max(1, roomListLimit);
         this.roomListCache = Caffeine.newBuilder()
-                .maximumSize(Math.max(1, roomListCacheMaxSize))
+                .maximumSize(1)
                 .expireAfterWrite(roomListCacheTtl)
                 .recordStats()
                 .build();
@@ -62,7 +68,10 @@ public class RoomService {
 
     public RoomsResponse getAllRooms(String name) {
         try {
-            return roomListCache.get(cacheKey(name), ignored -> loadAllRooms(name));
+            // 무거운 조회(Mongo + 참가자 조인 + 최근 메시지 집계)는 전체 인스턴스에서 1건만 캐시하고,
+            // 요청자마다 달라지는 isCreator만 캐시된 결과 위에서 다시 계산한다.
+            RoomsResponse shared = roomListCache.get(SHARED_ROOM_LIST_KEY, ignored -> loadAllRooms());
+            return withCreatorFlag(shared, name);
 
         } catch (Exception e) {
             log.error("방 목록 조회 에러", e);
@@ -73,16 +82,17 @@ public class RoomService {
         }
     }
 
-    private RoomsResponse loadAllRooms(String name) {
+    private RoomsResponse loadAllRooms() {
+        // 최신순 상위 N개만 조회한다. 방이 무한히 쌓여도 응답 크기와 조회 비용이 일정하게 유지된다.
+        List<Room> rooms = roomRepository.findRecentRooms(PageRequest.of(0, roomListLimit));
         // 모든 방의 사용자 정보를 한 번에 읽어 방/참가자 수에 비례하는 N+1 조회를 피한다.
-        List<Room> rooms = roomRepository.findAll();
         Map<String, User> usersById = loadUsersById(rooms);
         Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(
                 rooms.stream().map(Room::getId).toList());
         List<RoomResponse> roomResponses = rooms.stream()
             .map(room -> mapToRoomResponse(
                     room,
-                    name,
+                    null,
                     usersById,
                     recentMessageCounts.getOrDefault(room.getId(), 0)))
             .sorted(Comparator.comparing(
@@ -104,6 +114,41 @@ public class RoomService {
             .data(roomResponses)
             .metadata(metadata)
             .build();
+    }
+
+    /**
+     * 공유 캐시에는 isCreator=false로 담기므로, 요청한 사용자 기준으로 그 값만 다시 채운다.
+     * 추가 조회 없이 리스트를 얕게 다시 만드는 작업이라 비용이 사실상 없다.
+     */
+    private RoomsResponse withCreatorFlag(RoomsResponse shared, String name) {
+        if (shared == null || shared.getData() == null) {
+            return shared;
+        }
+
+        List<RoomResponse> personalized = shared.getData().stream()
+            .map(room -> RoomResponse.builder()
+                .id(room.getId())
+                .name(room.getName())
+                .hasPassword(room.isHasPassword())
+                .creator(room.getCreator())
+                .participants(room.getParticipants())
+                .createdAtDateTime(room.getCreatedAtDateTime())
+                .recentMessageCount(room.getRecentMessageCount())
+                .isCreator(isCreatedBy(room, name))
+                .build())
+            .collect(Collectors.toList());
+
+        return RoomsResponse.builder()
+            .success(shared.isSuccess())
+            .data(personalized)
+            .metadata(shared.getMetadata())
+            .build();
+    }
+
+    private boolean isCreatedBy(RoomResponse room, String name) {
+        return name != null
+                && room.getCreator() != null
+                && name.equalsIgnoreCase(room.getCreator().getEmail());
     }
 
     public HealthResponse getHealthStatus() {
@@ -229,10 +274,6 @@ public class RoomService {
 
     private void invalidateRoomListCache() {
         roomListCache.invalidateAll();
-    }
-
-    private String cacheKey(String name) {
-        return name == null ? "anonymous" : name.toLowerCase();
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name) {
