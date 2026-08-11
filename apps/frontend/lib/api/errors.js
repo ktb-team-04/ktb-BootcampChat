@@ -15,13 +15,25 @@ export const RETRY_CONFIG = {
   ],
 };
 
-export const getRetryDelay = (retryCount) => {
-  const delay =
-    RETRY_CONFIG.initialDelayMs *
-    Math.pow(RETRY_CONFIG.backoffFactor, retryCount) *
-    (1 + Math.random() * 0.1);
+export const getRetryDelay = (retryCount, retryAfter) => {
+  const retryAfterSeconds = Number(retryAfter);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000;
+  }
 
-  return Math.min(delay, RETRY_CONFIG.maxDelayMs);
+  const maximumDelay = Math.min(
+    RETRY_CONFIG.initialDelayMs *
+      Math.pow(RETRY_CONFIG.backoffFactor, retryCount),
+    RETRY_CONFIG.maxDelayMs
+  );
+
+  // full jitter로 장애 복구 직후 모든 클라이언트가 동시에 재요청하는 현상을 줄인다.
+  return Math.random() * maximumDelay;
+};
+
+export const isRetryAllowed = (config = {}) => {
+  const method = config.method?.toLowerCase();
+  return ['get', 'head', 'options'].includes(method) || config.allowRetry === true;
 };
 
 export const isRetryableError = (error) => {

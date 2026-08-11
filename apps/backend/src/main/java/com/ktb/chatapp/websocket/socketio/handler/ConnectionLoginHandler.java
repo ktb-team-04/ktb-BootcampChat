@@ -11,7 +11,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -74,7 +73,7 @@ public class ConnectionLoginHandler {
             log.info("Socket.IO user connected: {} ({}) - Total concurrent users: {}",
                     getUserName(client), userId, connectedUsers.size());
 
-            client.joinRooms(Set.of("user:" + userId, "room-list"));
+            client.joinRooms(connectionRooms(user));
             
         } catch (Exception e) {
             log.error("Error handling Socket.IO connection", e);
@@ -107,7 +106,7 @@ public class ConnectionLoginHandler {
                 log.warn("Socket.IO disconnect: User {} has a different active connection. Skipping cleanup.", userId);
             }
 
-            client.leaveRooms(Set.of("user:" + userId, "room-list"));
+            client.leaveRooms(connectionRooms(socketUser));
             client.del("user");
             client.disconnect();
 
@@ -136,23 +135,15 @@ public class ConnectionLoginHandler {
         return user != null ? user.name() : null;
     }
     
-    /**
-     * TODO 멀티 클러스터에서 동작 안함
-     * socketIOServer.getRoomOperations("user:" + userId) 로 처리 변경.
-     */
     private void notifyDuplicateLogin(SocketIOClient client, String userId) {
         var socketUser = connectedUsers.get(userId);
         if (socketUser == null) {
             return;
         }
-        String existingSocketId = socketUser.socketId();
-        SocketIOClient existingClient = socketIOServer.getClient(UUID.fromString(existingSocketId));
-        if (existingClient == null) {
-            return;
-        }
+        var existingSession = socketIOServer.getRoomOperations(sessionRoom(socketUser));
         
-        // Send duplicate login notification
-        existingClient.sendEvent(DUPLICATE_LOGIN, Map.of(
+        // 인증 세션 전용 room을 사용해 기존 연결이 다른 노드에 있어도 정확히 전달한다.
+        existingSession.sendEvent(DUPLICATE_LOGIN, Map.of(
                 "type", "new_login_attempt",
                 "deviceInfo", client.getHandshakeData().getHttpHeaders().get("User-Agent"),
                 "ipAddress", client.getRemoteAddress().toString(),
@@ -162,7 +153,7 @@ public class ConnectionLoginHandler {
         new Thread(() -> {
             try {
                 Thread.sleep(Duration.ofSeconds(10));
-                existingClient.sendEvent(SESSION_ENDED, Map.of(
+                existingSession.sendEvent(SESSION_ENDED, Map.of(
                         "reason", "duplicate_login",
                         "message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다."
                 ));
@@ -171,5 +162,13 @@ public class ConnectionLoginHandler {
                 log.error("Error in duplicate login notification thread", e);
             }
         }).start();
+    }
+
+    private Set<String> connectionRooms(SocketUser user) {
+        return Set.of("user:" + user.id(), sessionRoom(user), "room-list");
+    }
+
+    private String sessionRoom(SocketUser user) {
+        return "session:" + user.authSessionId();
     }
 }

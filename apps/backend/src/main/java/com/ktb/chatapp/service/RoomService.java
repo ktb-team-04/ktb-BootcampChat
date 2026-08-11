@@ -31,6 +31,7 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final RecentMessageCounter recentMessageCounter;
+    private final ChatLookupCache chatLookupCache;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -40,8 +41,14 @@ public class RoomService {
             // 모든 방의 사용자 정보를 한 번에 읽어 방/참가자 수에 비례하는 N+1 조회를 피한다.
             List<Room> rooms = roomRepository.findAll();
             Map<String, User> usersById = loadUsersById(rooms);
+            Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(
+                    rooms.stream().map(Room::getId).toList());
             List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(room, name, usersById))
+                .map(room -> mapToRoomResponse(
+                        room,
+                        name,
+                        usersById,
+                        recentMessageCounts.getOrDefault(room.getId(), 0)))
                 .sorted(Comparator.comparing(
                     RoomResponse::getCreatedAtDateTime,
                     Comparator.nullsLast(Comparator.reverseOrder())))
@@ -132,6 +139,7 @@ public class RoomService {
         }
 
         Room savedRoom = roomRepository.save(room);
+        chatLookupCache.invalidateRoom(savedRoom.getId());
         
         // Publish event for room created
         try {
@@ -170,6 +178,7 @@ public class RoomService {
             // 채팅방 참여
             room.getParticipantIds().add(user.getId());
             room = roomRepository.save(room);
+            chatLookupCache.invalidateRoom(room.getId());
         }
         
         // Publish event for room updated
@@ -185,10 +194,18 @@ public class RoomService {
 
     private RoomResponse mapToRoomResponse(Room room, String name) {
         if (room == null) return null;
-        return mapToRoomResponse(room, name, loadUsersById(List.of(room)));
+        return mapToRoomResponse(
+                room,
+                name,
+                loadUsersById(List.of(room)),
+                recentMessageCounter.countRecentMessages(room.getId()));
     }
 
-    private RoomResponse mapToRoomResponse(Room room, String name, Map<String, User> usersById) {
+    private RoomResponse mapToRoomResponse(
+            Room room,
+            String name,
+            Map<String, User> usersById,
+            int recentMessageCount) {
         if (room == null) return null;
 
         User creator = usersById.get(room.getCreator());
@@ -197,8 +214,6 @@ public class RoomService {
             .map(usersById::get)
             .filter(java.util.Objects::nonNull)
             .toList();
-
-        int recentMessageCount = recentMessageCounter.countRecentMessages(room.getId());
 
         return RoomResponse.builder()
             .id(room.getId())
