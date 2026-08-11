@@ -3,13 +3,19 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.ktb.chatapp.dto.FileResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.dto.UserResponse;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.service.FileUrl;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -33,6 +39,40 @@ public class MessageResponseMapper {
      * @return MessageResponse DTO
      */
     public MessageResponse mapToMessageResponse(Message message, User sender) {
+        File attachedFile = Optional.ofNullable(message.getFileId())
+                .flatMap(fileRepository::findById)
+                .orElse(null);
+        return mapToMessageResponse(message, sender, attachedFile);
+    }
+
+    /**
+     * 메시지 목록에 필요한 파일을 한 번에 조회하여 응답 목록으로 변환한다.
+     */
+    public List<MessageResponse> mapToMessageResponses(
+            List<Message> messages,
+            Map<String, User> sendersById) {
+        var fileIds = messages.stream()
+                .map(Message::getFileId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, File> filesById = fileIds.isEmpty()
+                ? Map.of()
+                : fileRepository.findAllById(fileIds).stream()
+                        .collect(Collectors.toMap(File::getId, Function.identity()));
+
+        return messages.stream()
+                .map(message -> mapToMessageResponse(
+                        message,
+                        message.getSenderId() == null
+                                ? null
+                                : sendersById.get(message.getSenderId()),
+                        message.getFileId() == null
+                                ? null
+                                : filesById.get(message.getFileId())))
+                .toList();
+    }
+
+    private MessageResponse mapToMessageResponse(Message message, User sender, File attachedFile) {
         MessageResponse.MessageResponseBuilder builder = MessageResponse.builder()
                 .id(message.getId())
                 .content(message.getContent())
@@ -55,8 +95,7 @@ public class MessageResponseMapper {
         }
 
         // 파일 정보 설정
-        Optional.ofNullable(message.getFileId())
-                .flatMap(fileRepository::findById)
+        Optional.ofNullable(attachedFile)
                 .map(file -> FileResponse.builder()
                         .id(file.getId())
                         .filename(file.getFilename())
