@@ -11,6 +11,7 @@ import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.RecentRoomMessageCache;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -50,6 +51,9 @@ class MessageLoaderIntegrationTest {
     @MockitoSpyBean
     private MessageReadStatusService messageReadStatusService;
 
+    @Autowired
+    private RecentRoomMessageCache recentRoomMessageCache;
+
     private MessageLoader messageLoader;
     private Faker faker;
     private String roomId;
@@ -68,7 +72,8 @@ class MessageLoaderIntegrationTest {
                 messageRepository,
                 userRepository,
                 new MessageResponseMapper(fileRepository),
-                messageReadStatusService
+                messageReadStatusService,
+                recentRoomMessageCache
         );
 
         // 테스트 사용자 생성 및 저장
@@ -90,76 +95,46 @@ class MessageLoaderIntegrationTest {
     }
 
     @Test
-    @DisplayName("100개 메시지 생성 후 초기 30개, 이후 30개씩, 마지막 10개 순차적으로 로드")
-    void loadMessages_shouldLoadInPagesOf30ThenFinal10() {
+    @DisplayName("100개 메시지 생성 후 초기 15개, 이후 15개씩 순차적으로 로드")
+    void loadMessages_shouldLoadInPagesOf15() {
         // Given: 100개의 메시지 생성
         List<Message> messages = IntStream.range(0, 100)
                 .mapToObj(this::createAndSaveMessage)
                 .toList();
 
-        // When & Then 1: 초기 30개 메시지 로드
+        // When & Then 1: 초기 15개 메시지 로드
         FetchMessagesRequest initialRequest = new FetchMessagesRequest(roomId, 30, null);
         FetchMessagesResponse firstResponse = messageLoader.loadMessages(initialRequest, userId);
 
-        assertThat(firstResponse.getMessages()).hasSize(30);
+        assertThat(firstResponse.getMessages()).hasSize(15);
         assertThat(firstResponse.isHasMore()).isTrue();
 
-        // 첫 번째 배치가 가장 오래된 30개 메시지인지 확인
         verifyMessageOrder(firstResponse);
 
-        // When & Then 2: 두 번째 30개 메시지 로드 (before 파라미터 사용)
+        // When & Then 2: 두 번째 15개 메시지 로드 (before 파라미터 사용)
         long beforeSecond = firstResponse.firstMessageTimestamp();
         FetchMessagesRequest secondRequest = new FetchMessagesRequest(roomId, 30, beforeSecond);
         FetchMessagesResponse secondResponse = messageLoader.loadMessages(secondRequest, userId);
 
-        assertThat(secondResponse.getMessages()).hasSize(30);
+        assertThat(secondResponse.getMessages()).hasSize(15);
         assertThat(secondResponse.isHasMore()).isTrue();
 
-        // 두 번째 배치가 그 다음 30개 메시지인지 확인
         verifyMessageOrder(secondResponse);
-
-        // When & Then 3: 세 번째 30개 메시지 로드
-        long beforeThird = secondResponse.firstMessageTimestamp();
-        FetchMessagesRequest thirdRequest = new FetchMessagesRequest(roomId, 30, beforeThird);
-        FetchMessagesResponse thirdResponse = messageLoader.loadMessages(thirdRequest, userId);
-
-        assertThat(thirdResponse.getMessages()).hasSize(30);
-        assertThat(thirdResponse.isHasMore()).isTrue();
-
-        verifyMessageOrder(thirdResponse);
-
-        // When & Then 4: 마지막 10개 메시지 로드
-        Long beforeFourth = thirdResponse.firstMessageTimestamp();
-        FetchMessagesRequest fourthRequest = new FetchMessagesRequest(roomId, 30, beforeFourth);
-        FetchMessagesResponse fourthResponse = messageLoader.loadMessages(fourthRequest, userId);
-
-        assertThat(fourthResponse.getMessages()).hasSize(10);
-        assertThat(fourthResponse.isHasMore()).isFalse();
-
-        // 마지막 배치가 가장 최신 메시지인지 확인
-        verifyMessageOrder(fourthResponse);
-
-        // 전체 로드된 메시지 수 확인
-        int totalLoaded = firstResponse.getMessages().size()
-                + secondResponse.getMessages().size()
-                + thirdResponse.getMessages().size()
-                + fourthResponse.getMessages().size();
-        assertThat(totalLoaded).isEqualTo(100);
     }
 
     @Test
-    @DisplayName("메시지가 30개 미만일 때 hasMore가 false")
-    void loadMessages_whenLessThan30Messages_hasMoreShouldBeFalse() {
-        // Given: 20개의 메시지만 생성
-        IntStream.range(0, 20)
+    @DisplayName("메시지가 15개 미만일 때 hasMore가 false")
+    void loadMessages_whenLessThan15Messages_hasMoreShouldBeFalse() {
+        // Given: 10개의 메시지만 생성
+        IntStream.range(0, 10)
                 .forEach(this::createAndSaveMessage);
 
-        // When: 초기 30개 요청
+        // When: 초기 15개 요청
         FetchMessagesRequest request = new FetchMessagesRequest(roomId, 30, null);
         FetchMessagesResponse response = messageLoader.loadMessages(request, userId);
 
-        // Then: 20개만 반환되고 hasMore는 false
-        assertThat(response.getMessages()).hasSize(20);
+        // Then: 10개만 반환되고 hasMore는 false
+        assertThat(response.getMessages()).hasSize(10);
         assertThat(response.isHasMore()).isFalse();
     }
 

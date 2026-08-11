@@ -10,6 +10,7 @@ import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.RecentRoomMessageCache;
 import net.datafaker.Faker;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,9 @@ class MessageLoaderTest {
     
     @Mock
     private MessageReadStatusService messageReadStatusService;
+
+    @Mock
+    private RecentRoomMessageCache recentRoomMessageCache;
     
     @InjectMocks
     private MessageLoader messageLoader;
@@ -64,8 +68,12 @@ class MessageLoaderTest {
                 messageRepository,
                 userRepository,
                 new MessageResponseMapper(fileRepository),
-                messageReadStatusService
+                messageReadStatusService,
+                recentRoomMessageCache
         );
+        lenient().when(recentRoomMessageCache.maxSize()).thenReturn(15);
+        lenient().when(recentRoomMessageCache.getFirstPage(anyString(), anyInt()))
+                .thenReturn(java.util.Optional.empty());
         
         var testUser = User.builder()
                 .id(userId)
@@ -100,12 +108,12 @@ class MessageLoaderTest {
     @Test
     @DisplayName("loadMessages: 내림차순 조회 후 오름차순 재정렬")
     void loadMessages_shouldReturnAscendingOrderAfterReversing() {
-        // Given: testMessages[0~29] (50시간 전 ~ 21시간 전) - 오름차순 상태
-        List<Message> first30Messages = testMessages.subList(0, 30);
+        // Given: testMessages[0~14] (50시간 전 ~ 36시간 전) - 오름차순 상태
+        List<Message> first15Messages = testMessages.subList(0, 15);
         
         // DB는 DESC 정렬로 반환한다고 가정 (최신 것 먼저)
-        // [21시간 전, 22시간 전, ..., 50시간 전]
-        var messagePage = getMessagePage(first30Messages);
+        // [36시간 전, 37시간 전, ..., 50시간 전]
+        var messagePage = getMessagePage(first15Messages);
         
         when(messageRepository.findByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
@@ -116,18 +124,18 @@ class MessageLoaderTest {
         FetchMessagesResponse result = messageLoader.loadMessages(req, userId);
         
         // Then: 결과는 오름차순으로 정렬되어야 함
-        assertThat(result.getMessages()).hasSize(30);
+        assertThat(result.getMessages()).hasSize(15);
         assertThat(result.isHasMore()).isTrue();
         
         // 시간순 정렬 확인 (오름차순: 오래된 것 → 최신 것)
-        // [50시간 전, 49시간 전, ..., 21시간 전]
+        // [50시간 전, 49시간 전, ..., 36시간 전]
         verifyAscending(result);
     }
     
-    private static @NotNull Page<Message> getMessagePage(List<Message> first30Messages) {
-        List<Message> messages = new ArrayList<>(first30Messages.reversed());
+    private static @NotNull Page<Message> getMessagePage(List<Message> first15Messages) {
+        List<Message> messages = new ArrayList<>(first15Messages.reversed());
         
-        Pageable pageable = PageRequest.of(0, 30, Sort.by("timestamp").descending());
+        Pageable pageable = PageRequest.of(0, 15, Sort.by("timestamp").descending());
         Page<Message> messagePage = new PageImpl<>(messages, pageable, 50);
         return messagePage;
     }
@@ -135,12 +143,12 @@ class MessageLoaderTest {
     @Test
     @DisplayName("loadInitialMessages: 내림차순 조회 후 오름차순 재정렬")
     void loadInitialMessages_shouldReturnAscendingOrderAfterReversing() {
-        // Given: testMessages[20~49] (30시간 전 ~ 1시간 전) - 최신 30개 메시지
-        List<Message> last30Messages = testMessages.subList(20, 50);
+        // Given: testMessages[35~49] (15시간 전 ~ 1시간 전) - 최신 15개 메시지
+        List<Message> last15Messages = testMessages.subList(35, 50);
         
         // DB는 DESC 정렬로 반환 (최신 것부터)
-        // [1시간 전, 2시간 전, ..., 30시간 전]
-        Page<Message> messagePage = getMessagePage(last30Messages);
+        // [1시간 전, 2시간 전, ..., 15시간 전]
+        Page<Message> messagePage = getMessagePage(last15Messages);
         
         when(messageRepository.findByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
@@ -151,10 +159,10 @@ class MessageLoaderTest {
         FetchMessagesResponse result = messageLoader.loadMessages(req, userId);
         
         // Then: 결과는 오름차순으로 정렬되어야 함
-        assertThat(result.getMessages()).hasSize(30);
+        assertThat(result.getMessages()).hasSize(15);
         
         // 시간순 정렬 확인 (오름차순: 오래된 것 → 최신 것)
-        // [30시간 전, 29시간 전, ..., 1시간 전]
+        // [15시간 전, 14시간 전, ..., 1시간 전]
         verifyAscending(result);
     }
     
@@ -190,7 +198,7 @@ class MessageLoaderTest {
         second.setFileId("file-2");
         second.setType(MessageType.file);
 
-        Pageable pageable = PageRequest.of(0, 30, Sort.by("timestamp").descending());
+        Pageable pageable = PageRequest.of(0, 15, Sort.by("timestamp").descending());
         when(messageRepository.findByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(second, first), pageable, 2));
@@ -208,5 +216,41 @@ class MessageLoaderTest {
         verify(userRepository, never()).findById(anyString());
         verify(fileRepository, times(1)).findAllById(Set.of("file-1", "file-2"));
         verify(fileRepository, never()).findById(anyString());
+    }
+
+    @Test
+    @DisplayName("loadInitialMessages: 첫 페이지 캐시 hit 시 MongoDB를 조회하지 않음")
+    void loadInitialMessages_shouldUseRecentRoomMessageCache() {
+        MessageResponse cachedMessage = MessageResponse.builder()
+                .id("message-1")
+                .roomId(roomId)
+                .timestamp(System.currentTimeMillis())
+                .build();
+        when(recentRoomMessageCache.getFirstPage(roomId, 15))
+                .thenReturn(java.util.Optional.of(
+                        new RecentRoomMessageCache.CachedMessages(List.of(cachedMessage), false)));
+
+        FetchMessagesResponse result = messageLoader.loadMessages(
+                new FetchMessagesRequest(roomId, 30, null), userId);
+
+        assertThat(result.getMessages()).containsExactly(cachedMessage);
+        assertThat(result.isHasMore()).isFalse();
+        verifyNoInteractions(messageRepository);
+        verify(messageReadStatusService).updateReadStatus(List.of("message-1"), userId);
+    }
+
+    @Test
+    @DisplayName("loadInitialMessages: 빈 결과도 짧게 캐싱")
+    void loadInitialMessages_shouldCacheEmptyFirstPage() {
+        Pageable pageable = PageRequest.of(0, 15, Sort.by("timestamp").descending());
+        when(messageRepository.findByRoomIdAndTimestampBefore(
+                eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        FetchMessagesResponse result = messageLoader.loadMessages(
+                new FetchMessagesRequest(roomId, 30, null), userId);
+
+        assertThat(result.getMessages()).isEmpty();
+        verify(recentRoomMessageCache).cacheFirstPage(roomId, List.of(), false);
     }
 }
