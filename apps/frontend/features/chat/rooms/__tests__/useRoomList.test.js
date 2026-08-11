@@ -131,7 +131,13 @@ describe('useRoomList', () => {
     expect(hardNavigate).not.toHaveBeenCalled();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(900);
+    });
+
+    expect(hardNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
     });
 
     expect(hardNavigate).toHaveBeenCalledWith('/chat/room-1');

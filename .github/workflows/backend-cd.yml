@@ -95,6 +95,8 @@ jobs:
           file: apps/backend/Dockerfile
           push: true
           tags: ${{ steps.image.outputs.uri }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Set up SSH
         run: |

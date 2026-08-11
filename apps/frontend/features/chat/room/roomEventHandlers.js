@@ -64,6 +64,24 @@ export const appendIncomingMessage = (messages, incoming) => {
     return messages;
   }
 
+  const incomingSenderId = incoming.sender?._id || incoming.sender?.id || incoming.sender;
+  const optimisticIndex = messages.findIndex((msg) => {
+    if (!msg?._optimistic) return false;
+    const optimisticSenderId = msg.sender?._id || msg.sender?.id || msg.sender;
+    return (
+      msg.room === incoming.room &&
+      msg.type === incoming.type &&
+      msg.content === incoming.content &&
+      String(optimisticSenderId || '') === String(incomingSenderId || '')
+    );
+  });
+
+  if (optimisticIndex !== -1) {
+    return messages.map((msg, index) => (
+      index === optimisticIndex ? incoming : msg
+    ));
+  }
+
   const toTime = (message) => {
     const timestamp = message?.timestamp;
     if (typeof timestamp === 'number') return timestamp;

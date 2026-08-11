@@ -77,6 +77,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     setLoadingMessages,
     socketRef,
     roomReady,
+    setMessages,
   );
 
   // Cleanup 함수 수정

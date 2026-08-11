@@ -163,6 +163,13 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
         backgroundColor: 'var(--vapor-color-surface-normal)',
       }}
     >
+      {roomReady && (
+        <span
+          data-testid="chat-room-ready"
+          hidden
+        />
+      )}
+
       {/* 채팅방 정보 (참여자 목록 및 연결 상태) */}
       <ChatRoomInfo room={room} connectionStatus={connectionStatus} />
 

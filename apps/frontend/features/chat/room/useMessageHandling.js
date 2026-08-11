@@ -12,6 +12,7 @@ export const useMessageHandling = (
   setLoadingMessages,
   socketRef,
   roomReady = true,
+  setMessages,
 ) => {
  const {
    filePreview,
@@ -65,6 +66,7 @@ export const useMessageHandling = (
 
  const handleMessageSubmit = useCallback(async (messageData) => {
    const roomSocket = getRoomSocket();
+   let optimisticMessageId = null;
    if (!roomReady) {
      Toast.error('채팅방 입장이 완료되지 않았습니다. 잠시 후 다시 시도해주세요.');
      return;
@@ -103,14 +105,34 @@ export const useMessageHandling = (
        resetFileUpload();
 
      } else if (messageData.content?.trim()) {
+       const content = messageData.content.trim();
+       optimisticMessageId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+       const optimisticMessage = {
+         _id: optimisticMessageId,
+         room: roomId,
+         type: 'text',
+         content,
+         sender: currentUser,
+         timestamp: new Date().toISOString(),
+         readers: [],
+         reactions: {},
+         _optimistic: true,
+       };
+
+       setMessages?.(prev => [...prev, optimisticMessage]);
+
        await socketClient.sendChatMessageAndWait({
          room: roomId,
          type: 'text',
-         content: messageData.content.trim()
+         content
        }, roomSocket);
      }
 
    } catch (error) {
+     if (messageData.type === 'text' && optimisticMessageId) {
+       setMessages?.(prev => prev.filter(message => message._id !== optimisticMessageId));
+     }
+
      if (error.message?.includes('세션') ||
          error.message?.includes('인증') ||
          error.message?.includes('토큰')) {
@@ -128,7 +150,7 @@ export const useMessageHandling = (
        setUploading(false);
      }
    }
- }, [currentUser, roomId, roomReady, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, canSendOnRoomSocket, getRoomSocket]);
+ }, [currentUser, roomId, roomReady, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, setMessages, canSendOnRoomSocket, getRoomSocket]);
 
  const removeFilePreview = useCallback(() => {
    resetFileUpload();
