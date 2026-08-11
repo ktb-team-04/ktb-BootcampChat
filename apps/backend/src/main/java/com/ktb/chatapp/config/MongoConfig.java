@@ -3,6 +3,7 @@ package com.ktb.chatapp.config;
 import java.util.concurrent.TimeUnit;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.mongodb.autoconfigure.MongoClientSettingsBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,6 +29,10 @@ public class MongoConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(
+            name = "spring.data.mongodb.auto-index-creation",
+            havingValue = "true",
+            matchIfMissing = true)
     ApplicationRunner ensureMessageQueryIndexes(MongoTemplate mongoTemplate) {
         return args -> mongoTemplate.indexOps(Message.class).ensureIndex(
                 new Index()
