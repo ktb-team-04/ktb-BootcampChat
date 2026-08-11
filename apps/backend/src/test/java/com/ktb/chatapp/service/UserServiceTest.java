@@ -37,6 +37,9 @@ class UserServiceTest {
     @Mock
     private FileService fileService;
 
+    @Mock
+    private ChatLookupCache chatLookupCache;
+
     private UserService userService;
 
     @TempDir
@@ -48,7 +51,11 @@ class UserServiceTest {
      */
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, fileService, new LocalStorage(uploadDir.toString()));
+        userService = new UserService(
+                userRepository,
+                fileService,
+                new LocalStorage(uploadDir.toString()),
+                chatLookupCache);
         ReflectionTestUtils.setField(userService, "maxProfileImageSize", 5242880L);
     }
 
