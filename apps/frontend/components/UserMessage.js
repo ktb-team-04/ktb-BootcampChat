@@ -84,6 +84,7 @@ const UserMessage = ({
               participants={room?.participants || []}
               readers={msg.readers || []}
               messageId={msg._id}
+              roomId={msg.room || msg.roomId || room?._id || room?.id}
               messageRef={messageDomRef}
               currentUserId={currentUser?._id || currentUser?.id}
             />

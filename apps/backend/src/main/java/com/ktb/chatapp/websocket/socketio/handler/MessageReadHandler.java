@@ -50,8 +50,11 @@ public class MessageReadHandler {
                 return;
             }
             
-            String roomId = messageRepository.findById(data.getMessageIds().getFirst())
-                    .map(Message::getRoomId).orElse(null);
+            String roomId = data.getRoomId();
+            if (roomId == null || roomId.isBlank()) {
+                roomId = messageRepository.findById(data.getMessageIds().getFirst())
+                        .map(Message::getRoomId).orElse(null);
+            }
             
             if (roomId == null || roomId.isBlank()) {
                 client.sendEvent(ERROR, Map.of("message", "Invalid room"));
