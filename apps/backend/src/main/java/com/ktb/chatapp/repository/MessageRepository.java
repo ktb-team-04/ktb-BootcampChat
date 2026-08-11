@@ -12,13 +12,13 @@ import org.springframework.data.mongodb.repository.ReadPreference;
 
 @Repository
 public interface MessageRepository extends MongoRepository<Message, String> {
-    @ReadPreference("secondaryPreferred")
+    @ReadPreference("secondary")
     Page<Message> findByRoomIdAndTimestampBefore(String roomId, LocalDateTime timestamp, Pageable pageable);
     /**
      * 특정 시간 이후의 메시지 수 카운트
      * 최근 N분간 메시지 수를 조회할 때 사용
      */
-    @Query(value = "{ 'room': ?0, 'timestamp': { $gte: ?1 } }", count = true, readPreference = "secondaryPreferred")
+    @Query(value = "{ 'room': ?0, 'timestamp': { $gte: ?1 } }", count = true, readPreference = "secondary")
     long countRecentMessagesByRoomId(String roomId, LocalDateTime since);
 
     /**
