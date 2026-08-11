@@ -15,6 +15,7 @@ import com.ktb.chatapp.websocket.socketio.RedisChatDataStore;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -49,22 +50,22 @@ public class SocketIOConfig {
     @Value("${socketio.store.type:redis}")
     private String storeType;
 
-    @Value("${spring.data.redis.host:localhost}")
+    @Value("${socketio.redis.host:localhost}")
     private String redisHost;
 
-    @Value("${spring.data.redis.port:6379}")
+    @Value("${socketio.redis.port:6379}")
     private int redisPort;
 
-    @Value("${spring.data.redis.username:}")
+    @Value("${socketio.redis.username:}")
     private String redisUsername;
 
-    @Value("${spring.data.redis.password:}")
+    @Value("${socketio.redis.password:}")
     private String redisPassword;
 
-    @Value("${spring.data.redis.database:0}")
+    @Value("${socketio.redis.database:0}")
     private int redisDatabase;
 
-    @Value("${spring.data.redis.ssl.enabled:false}")
+    @Value("${socketio.redis.ssl.enabled:false}")
     private boolean redisSslEnabled;
 
     @Value("${socketio.store.redis.connection-pool-size:16}")
@@ -126,7 +127,7 @@ public class SocketIOConfig {
     @Bean
     @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
     public ChatDataStore chatDataStore(
-            StringRedisTemplate redisTemplate,
+            @Qualifier("socketRedisTemplate") StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
             @Value("${socketio.store.redis.data-key-prefix:chat:socketio:data:}") String dataKeyPrefix) {
         if ("memory".equalsIgnoreCase(storeType)) {

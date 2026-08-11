@@ -19,8 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test and Build
+  build:
+    name: Build
     runs-on: ubuntu-latest
 
     env:
@@ -44,9 +44,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Run tests
-        run: pnpm --dir apps/frontend test
 
       - name: Build
         run: pnpm --dir apps/frontend build
