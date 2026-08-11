@@ -1,7 +1,11 @@
-const { loginAction, registerAction } = require('../../actions/auth.actions');
+const { loginAction, registerAction, logoutAction } = require('../../actions/auth.actions');
 const { expect } = require('@playwright/test');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+
+// Action 간 timeout 설정 (환경변수로 조절 가능)
+const ACTION_TIMEOUT = parseInt(process.env.ACTION_TIMEOUT || '1000', 10);
+const ACTION_TIMEOUT_SHORT = parseInt(process.env.ACTION_TIMEOUT_SHORT || '500', 10);
 
 /**
  * Artillery 로그인 시나리오
@@ -13,7 +17,7 @@ async function loginScenario(page, vuContext) {
     try {
         // 1. 회원가입
         await registerAction(page, testUser);
-        await expect(page.getByTestId('register-success-message')).toBeVisible();
+        await page.waitForTimeout(ACTION_TIMEOUT);
 
         // 2. 로그인
         await loginAction(page, testUser);

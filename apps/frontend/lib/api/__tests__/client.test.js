@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LAST_TOKEN_VERIFICATION_KEY,
   USER_STORAGE_KEY,
@@ -135,5 +135,43 @@ describe('api client', () => {
         data: { message: 'invalid credentials' },
       },
     });
+  });
+
+  it('does not automatically retry unsafe POST requests', async () => {
+    const client = createApiClient({ baseURL: 'http://api.test', getSession: () => null });
+    const adapter = vi.fn(async (config) => {
+      const error = new Error('Unavailable');
+      error.config = config;
+      error.response = { config, data: {}, headers: {}, status: 503, statusText: 'Unavailable' };
+      throw error;
+    });
+    client.defaults.adapter = adapter;
+
+    await expect(client.post('/api/rooms', { name: 'room' })).rejects.toMatchObject({
+      status: 503,
+    });
+    expect(adapter).toHaveBeenCalledTimes(1);
+  });
+
+  it('can explicitly retry an idempotent POST request', async () => {
+    vi.useFakeTimers();
+    const client = createApiClient({ baseURL: 'http://api.test', getSession: () => null });
+    const adapter = vi.fn(async (config) => {
+      if (adapter.mock.calls.length === 1) {
+        const error = new Error('Unavailable');
+        error.config = config;
+        error.response = { config, data: {}, headers: { 'retry-after': '0.01' }, status: 503 };
+        throw error;
+      }
+      return { config, data: { ok: true }, headers: {}, status: 200, statusText: 'OK' };
+    });
+    client.defaults.adapter = adapter;
+
+    const request = client.post('/api/idempotent', {}, { allowRetry: true });
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(request).resolves.toMatchObject({ data: { ok: true } });
+    expect(adapter).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });

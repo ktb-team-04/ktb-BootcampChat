@@ -47,4 +47,9 @@ public class AuthUserCache {
     public void markMissing(String email) {
         missingUsers.put(email, Boolean.TRUE);
     }
+
+    public void invalidate(String email) {
+        users.invalidate(email);
+        missingUsers.invalidate(email);
+    }
 }

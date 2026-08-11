@@ -34,9 +34,10 @@ export const processLoadedRoomMessages = ({
   return nextMessages;
 };
 
-export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =>
-  messages.map(msg => {
-    if (!messageIds.includes(msg._id)) {
+export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) => {
+  const readMessageIds = new Set(messageIds);
+  return messages.map(msg => {
+    if (!readMessageIds.has(msg._id)) {
       return msg;
     }
 
@@ -52,6 +53,7 @@ export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =
       readers: [...(msg.readers || []), { userId, readAt: timestamp || new Date() }],
     };
   });
+};
 
 export const appendIncomingMessage = (messages, incoming) => {
   if (!incoming?._id) {
@@ -62,7 +64,32 @@ export const appendIncomingMessage = (messages, incoming) => {
     return messages;
   }
 
-  return [...messages, incoming];
+  const toTime = (message) => {
+    const timestamp = message?.timestamp;
+    if (typeof timestamp === 'number') return timestamp;
+    return timestamp ? Date.parse(timestamp) || 0 : 0;
+  };
+  const incomingTime = toTime(incoming);
+  const lastTime = toTime(messages.at(-1));
+
+  if (messages.length === 0 || incomingTime >= lastTime) {
+    return [...messages, incoming];
+  }
+
+  // 네트워크 지연으로 늦게 도착한 이벤트만 이진 탐색으로 제 위치에 삽입한다.
+  let low = 0;
+  let high = messages.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const middleTime = toTime(messages[middle]);
+    if (middleTime <= incomingTime) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return [...messages.slice(0, low), incoming, ...messages.slice(low)];
 };
 
 export const createRoomEventHandlers = ({
