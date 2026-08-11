@@ -162,12 +162,15 @@ export const createSocketClient = (service = socketService) => ({
     }),
   leaveRoom: (roomId, socket) => sendDomainEvent(service, socket, 'leaveRoom', roomId),
   tryLeaveRoom: (roomId, socket) => service.trySendOn(socket, 'leaveRoom', roomId),
-  markMessagesAsRead: (messageIds, socket) => {
+  markMessagesAsRead: (messageIds, socket, roomId) => {
     if (!Array.isArray(messageIds)) {
       throw new Error('messageIds must be an array');
     }
 
-    return sendDomainEvent(service, socket, 'markMessagesAsRead', { messageIds });
+    return sendDomainEvent(service, socket, 'markMessagesAsRead', {
+      messageIds,
+      ...(roomId ? { roomId } : {}),
+    });
   },
   sendMessageReaction: (messageId, reaction, type, socket) => sendDomainEvent(service, socket, 'messageReaction', {
     messageId,

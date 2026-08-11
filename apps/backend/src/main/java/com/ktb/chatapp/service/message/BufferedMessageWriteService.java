@@ -45,8 +45,9 @@ public class BufferedMessageWriteService {
         }
 
         if (!queue.offer(message)) {
-            log.warn("메시지 버퍼가 가득 차 메시지를 드롭합니다: messageId={}, roomId={}",
+            log.warn("메시지 버퍼가 가득 차 동기 저장으로 전환합니다: messageId={}, roomId={}",
                     message.getId(), message.getRoomId());
+            return messageRepository.save(message);
         }
 
         return message;
