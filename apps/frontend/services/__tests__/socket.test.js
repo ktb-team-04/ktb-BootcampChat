@@ -77,6 +77,10 @@ describe('socketService', () => {
     expect(socket.io.on).toHaveBeenCalledWith('reconnect_failed', expect.any(Function));
     expect(socket.on).not.toHaveBeenCalledWith('reconnect', expect.any(Function));
     expect(socket.on).not.toHaveBeenCalledWith('reconnect_failed', expect.any(Function));
+    expect(io).toHaveBeenCalledWith(
+      'http://localhost:5002',
+      expect.objectContaining({ randomizationFactor: 0.5 })
+    );
   });
 
   it('does not let a stale manager reconnect failure clear a newer socket', async () => {

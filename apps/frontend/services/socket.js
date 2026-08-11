@@ -66,6 +66,7 @@ export class SocketService {
           reconnectionAttempts: this.maxReconnectAttempts,
           reconnectionDelay: this.retryDelay,
           reconnectionDelayMax: 5000,
+          randomizationFactor: 0.5,
           timeout: 20000,
           forceNew: true
         });

@@ -66,14 +66,34 @@ describe('roomEventHandlers', () => {
   });
 
   it('appends incoming messages only once', () => {
-    const currentMessages = [{ _id: 'message-1' }];
+    const currentMessages = [{ _id: 'message-1', timestamp: '2026-07-07T00:00:01.000Z' }];
 
     expect(appendIncomingMessage(currentMessages, { _id: 'message-1' })).toBe(
       currentMessages
     );
     expect(
-      appendIncomingMessage(currentMessages, { _id: 'message-2' })
-    ).toEqual([{ _id: 'message-1' }, { _id: 'message-2' }]);
+      appendIncomingMessage(currentMessages, {
+        _id: 'message-2',
+        timestamp: '2026-07-07T00:00:02.000Z',
+      })
+    ).toEqual([
+      { _id: 'message-1', timestamp: '2026-07-07T00:00:01.000Z' },
+      { _id: 'message-2', timestamp: '2026-07-07T00:00:02.000Z' },
+    ]);
+  });
+
+  it('inserts a delayed live message in timestamp order', () => {
+    const messages = [
+      { _id: 'message-1', timestamp: '2026-07-07T00:00:01.000Z' },
+      { _id: 'message-3', timestamp: '2026-07-07T00:00:03.000Z' },
+    ];
+
+    expect(
+      appendIncomingMessage(messages, {
+        _id: 'message-2',
+        timestamp: '2026-07-07T00:00:02.000Z',
+      }).map(message => message._id)
+    ).toEqual(['message-1', 'message-2', 'message-3']);
   });
 
   it('keeps live messages when the updater is invoked twice (StrictMode)', () => {
