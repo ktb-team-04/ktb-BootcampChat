@@ -60,7 +60,7 @@ describe('ChatMessages', () => {
     expect(messages.map((message) => message._id)).toEqual(originalOrder);
   });
 
-  it('keeps optimized message wrappers discoverable in the rendered DOM', () => {
+  it('renders message wrappers without deferred content visibility', () => {
     render(
       React.createElement(ChatMessages, {
         messages: [
@@ -81,10 +81,7 @@ describe('ChatMessages', () => {
     const optimizedWrapper = message.closest('[style]');
 
     expect(message).toBeInTheDocument();
-    expect(optimizedWrapper).toHaveStyle({
-      contentVisibility: 'auto',
-      containIntrinsicSize: '1px 96px',
-    });
+    expect(optimizedWrapper).not.toHaveStyle({ contentVisibility: 'auto' });
     expect(screen.getByText('이전 메시지를 불러오는 중...')).toBeInTheDocument();
   });
 });

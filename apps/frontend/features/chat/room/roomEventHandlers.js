@@ -157,7 +157,7 @@ export const createRoomEventHandlers = ({
       setMessages(prev => applyReadReceipts(prev, payload));
     },
     onMessage: (incoming) => {
-      if (!mountedRef.current || messageProcessingRef.current) return;
+      if (!mountedRef.current) return;
       if (!incoming?._id || processedMessageIds.current.has(incoming._id)) return;
       processedMessageIds.current.add(incoming._id);
       setMessages(prev => appendIncomingMessage(prev, incoming));

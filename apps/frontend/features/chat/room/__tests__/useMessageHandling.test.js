@@ -60,6 +60,54 @@ describe('useMessageHandling', () => {
     );
   });
 
+  it('adds an optimistic text message before the socket acknowledgement resolves', async () => {
+    const roomSocket = { connected: true };
+    const socketRef = { current: roomSocket };
+    let resolveAck;
+    socketClient.sendChatMessageAndWait.mockReturnValueOnce(
+      new Promise(resolve => {
+        resolveAck = resolve;
+      })
+    );
+    let committedMessages = [];
+    const setMessages = vi.fn(updater => {
+      committedMessages = updater(committedMessages);
+    });
+    const { result } = renderHook(() =>
+      useMessageHandling(
+        currentUser,
+        roomId,
+        vi.fn(),
+        [],
+        false,
+        vi.fn(),
+        socketRef,
+        true,
+        setMessages,
+      )
+    );
+
+    let submitPromise;
+    await act(async () => {
+      submitPromise = result.current.handleMessageSubmit({ type: 'text', content: '  visible now  ' });
+      await Promise.resolve();
+    });
+
+    expect(committedMessages).toMatchObject([
+      {
+        room: roomId,
+        type: 'text',
+        content: 'visible now',
+        _optimistic: true,
+      },
+    ]);
+
+    resolveAck({});
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
   it('shows a connection error without emitting when disconnected', async () => {
     socketClient.canSend.mockReturnValue(false);
     const { result } = renderHook(() =>
