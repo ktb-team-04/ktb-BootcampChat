@@ -53,7 +53,10 @@ class ConnectionLoginHandlerTest {
         verify(roomJoinHandler).handleJoinRoom(client, "room-1");
         verify(roomJoinHandler).handleJoinRoom(client, "room-2");
         verify(connectedUsers).set(user.id(), user);
-        verify(client).joinRooms(Set.of("user:" + user.id(), "room-list"));
+        verify(client).joinRooms(Set.of(
+                "user:" + user.id(),
+                "session:" + user.authSessionId(),
+                "room-list"));
     }
 
     @Test
@@ -69,7 +72,10 @@ class ConnectionLoginHandlerTest {
 
         verify(roomLeaveHandler).handleLeaveRoom(client, "room-1");
         verify(connectedUsers).del(user.id());
-        verify(client).leaveRooms(Set.of("user:" + user.id(), "room-list"));
+        verify(client).leaveRooms(Set.of(
+                "user:" + user.id(),
+                "session:" + user.authSessionId(),
+                "room-list"));
         verify(client).del("user");
         verify(client).disconnect();
     }
