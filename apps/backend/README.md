@@ -8,7 +8,7 @@
 ## 주요 기술 스택
 - 현재 기준선: Java 25, Spring Boot 4.1.0 (Web, Validation, Security, OAuth2 Resource Server)
 - AI: Spring AI 2.0.x
-- MongoDB 8.3
+- MongoDB 8.0.4
 - Netty Socket.IO 서버 (`com.corundumstudio:netty-socketio`)
 - Spring Security + JWT, 커스텀 레이트 리미터
 - Spring AI(OpenAI) 기반 대화형 응답 생성
