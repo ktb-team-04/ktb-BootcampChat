@@ -7,6 +7,7 @@ export const createInitialChatRoomState = () => ({
   error: '',
   loading: true,
   connectionStatus: 'checking',
+  roomReady: false,
   messageLoadError: null,
   isInitialized: false,
   hasMoreMessages: true,
@@ -24,18 +25,21 @@ export const chatRoomReducer = (state, action) => {
         ...state,
         loading: true,
         error: null,
+        roomReady: false,
       };
     case 'room/setupSucceeded':
       return {
         ...state,
         room: action.room,
         isInitialized: true,
+        roomReady: true,
         loading: false,
       };
     case 'room/setupFailed':
       return {
         ...state,
         error: action.error,
+        roomReady: false,
         loading: false,
       };
     case 'room/cleanupManual':
@@ -45,6 +49,7 @@ export const chatRoomReducer = (state, action) => {
         loading: false,
         loadingMessages: false,
         messages: [],
+        roomReady: false,
       };
     case 'room/changed':
       return {
@@ -70,17 +75,20 @@ export const chatRoomReducer = (state, action) => {
       return {
         ...state,
         connectionStatus: 'disconnected',
+        roomReady: false,
       };
     case 'connection/failed':
       return {
         ...state,
         connectionStatus: 'error',
         error: action.error,
+        roomReady: false,
       };
     case 'connection/reconnecting':
       return {
         ...state,
         connectionStatus: 'connecting',
+        roomReady: false,
       };
     case 'connection/recovered':
       return {

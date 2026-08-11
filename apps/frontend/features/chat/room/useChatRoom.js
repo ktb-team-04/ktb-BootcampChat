@@ -22,6 +22,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     currentUser,
     error,
     loading,
+    roomReady,
     messageLoadError,
     hasMoreMessages,
     loadingMessages,
@@ -67,7 +68,16 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     handleMessageSubmit,
     handleLoadMore,
     removeFilePreview,
-  } = useMessageHandling(currentUser, roomId, undefined, messages, loadingMessages, setLoadingMessages, socketRef);
+  } = useMessageHandling(
+    currentUser,
+    roomId,
+    undefined,
+    messages,
+    loadingMessages,
+    setLoadingMessages,
+    socketRef,
+    roomReady,
+  );
 
   // Cleanup 함수 수정
   const cleanup = useCallback((reason = 'MANUAL') => {
@@ -171,6 +181,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     messages,
     error,
     loading,
+    roomReady,
     connected,
     currentUser,
     filePreview,

@@ -11,6 +11,7 @@ export const useMessageHandling = (
   loadingMessages = false,
   setLoadingMessages,
   socketRef,
+  roomReady = true,
 ) => {
  const {
    filePreview,
@@ -64,6 +65,11 @@ export const useMessageHandling = (
 
  const handleMessageSubmit = useCallback(async (messageData) => {
    const roomSocket = getRoomSocket();
+   if (!roomReady) {
+     Toast.error('채팅방 입장이 완료되지 않았습니다. 잠시 후 다시 시도해주세요.');
+     return;
+   }
+
    if (!canSendOnRoomSocket() || !currentUser) {
      Toast.error('채팅 서버와 연결이 끊어졌습니다.');
      return;
@@ -122,7 +128,7 @@ export const useMessageHandling = (
        setUploading(false);
      }
    }
- }, [currentUser, roomId, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, canSendOnRoomSocket, getRoomSocket]);
+ }, [currentUser, roomId, roomReady, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, canSendOnRoomSocket, getRoomSocket]);
 
  const removeFilePreview = useCallback(() => {
    resetFileUpload();

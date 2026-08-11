@@ -1,6 +1,5 @@
 import { createContext, useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { useRouter } from 'next/router';
-import socketService from '../services/socket';
 import authService from '../services/authService';
 import api, { getAuthHeaders } from '../lib/api/client';
 import {
@@ -25,6 +24,11 @@ export const useAuth = () => {
 };
 
 const TOKEN_VERIFICATION_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+const disconnectSocket = async () => {
+  const { default: socketService } = await import('../services/socket');
+  socketService.disconnect();
+};
 
 /**
  * AuthProvider: 전역 인증 상태 관리
@@ -79,7 +83,7 @@ export const AuthProviderWithRouter = ({ children, router }) => {
       if (!currentUser) {
         // 세션 만료됨
         setUser(null);
-        socketService.disconnect();
+        disconnectSocket().catch(() => {});
         router.replace('/');
       }
     }, 5 * 60 * 1000);
@@ -114,7 +118,7 @@ export const AuthProviderWithRouter = ({ children, router }) => {
       console.error('Logout error:', error);
     } finally {
       // 소켓 연결 해제
-      socketService.disconnect();
+      await disconnectSocket().catch(() => {});
 
       // 로컬 상태 정리
       saveUser(null);
