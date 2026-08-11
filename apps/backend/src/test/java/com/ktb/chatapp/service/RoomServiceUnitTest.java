@@ -7,6 +7,7 @@ import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,8 @@ class RoomServiceUnitTest {
 
         when(roomRepository.findAll()).thenReturn(List.of(firstRoom, secondRoom));
         when(userRepository.findAllById(anySet())).thenReturn(List.of(first, second));
+        when(recentMessageCounter.countRecentMessages(List.of("room-1", "room-2")))
+                .thenReturn(Map.of("room-1", 7, "room-2", 3));
 
         RoomsResponse response = roomService.getAllRooms("first@example.com");
 
@@ -54,9 +57,12 @@ class RoomServiceUnitTest {
             if (room.getId().equals("room-1")) {
                 assertThat(room.isCreator()).isTrue();
                 assertThat(room.getParticipants()).hasSize(2);
+                assertThat(room.getRecentMessageCount()).isEqualTo(7);
             }
         });
         verify(userRepository, times(1)).findAllById(anySet());
+        verify(recentMessageCounter, times(1))
+                .countRecentMessages(List.of("room-1", "room-2"));
     }
 
     private Room room(String id, String creatorId, Set<String> participantIds) {
