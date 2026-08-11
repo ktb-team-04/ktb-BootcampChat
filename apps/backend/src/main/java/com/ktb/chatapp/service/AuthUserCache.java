@@ -22,6 +22,7 @@ public class AuthUserCache {
     private final ObjectMapper objectMapper;
     private final Duration userTtl;
     private final Duration missingTtl;
+    private final boolean redisEnabled;
     private final String redisUserKeyPrefix;
     private final String redisMissingKeyPrefix;
 
@@ -33,6 +34,7 @@ public class AuthUserCache {
             @Value("${app.auth.user-cache.ttl:15m}") Duration userTtl,
             @Value("${app.auth.negative-cache.maximum-size:5000}") long missingMaximumSize,
             @Value("${app.auth.negative-cache.ttl:1m}") Duration missingTtl,
+            @Value("${app.auth.redis.enabled:false}") boolean redisEnabled,
             @Value("${app.auth.redis.user-key-prefix:chat:auth:user:}") String redisUserKeyPrefix,
             @Value("${app.auth.redis.missing-key-prefix:chat:auth:missing:}") String redisMissingKeyPrefix) {
         users = Caffeine.newBuilder()
@@ -49,6 +51,7 @@ public class AuthUserCache {
         this.objectMapper = objectMapper;
         this.userTtl = userTtl;
         this.missingTtl = missingTtl;
+        this.redisEnabled = redisEnabled;
         this.redisUserKeyPrefix = redisUserKeyPrefix;
         this.redisMissingKeyPrefix = redisMissingKeyPrefix;
     }
@@ -59,7 +62,7 @@ public class AuthUserCache {
             long missingMaximumSize,
             Duration missingTtl) {
         this(null, null, userMaximumSize, userTtl, missingMaximumSize, missingTtl,
-                "chat:auth:user:", "chat:auth:missing:");
+                false, "chat:auth:user:", "chat:auth:missing:");
     }
 
     public User get(String email) {
@@ -83,7 +86,7 @@ public class AuthUserCache {
         if (missingUsers.getIfPresent(email) != null) {
             return true;
         }
-        if (redisTemplate == null) {
+        if (!canUseRedis()) {
             return false;
         }
         try {
@@ -101,7 +104,7 @@ public class AuthUserCache {
     public void put(User user) {
         users.put(user.getEmail(), user);
         missingUsers.invalidate(user.getEmail());
-        if (redisTemplate == null) {
+        if (!canUseRedis()) {
             return;
         }
         try {
@@ -117,7 +120,7 @@ public class AuthUserCache {
 
     public void markMissing(String email) {
         missingUsers.put(email, Boolean.TRUE);
-        if (redisTemplate == null) {
+        if (!canUseRedis()) {
             return;
         }
         try {
@@ -131,7 +134,7 @@ public class AuthUserCache {
     public void invalidate(String email) {
         users.invalidate(email);
         missingUsers.invalidate(email);
-        if (redisTemplate == null) {
+        if (!canUseRedis()) {
             return;
         }
         try {
@@ -143,7 +146,7 @@ public class AuthUserCache {
     }
 
     private CachedAuthUser readRedisUser(String email) {
-        if (redisTemplate == null) {
+        if (!canUseRedis()) {
             return null;
         }
         try {
@@ -161,6 +164,10 @@ public class AuthUserCache {
 
     private String redisMissingKey(String email) {
         return redisMissingKeyPrefix + email;
+    }
+
+    private boolean canUseRedis() {
+        return redisEnabled && redisTemplate != null && objectMapper != null;
     }
 
     private record CachedAuthUser(
