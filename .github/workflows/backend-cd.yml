@@ -158,10 +158,26 @@ jobs:
           SCRIPT
 
           hosts="$(printf '%s' "$BACKEND_DEPLOY_HOSTS" | tr -d '\r' | xargs)"
+          pids=()
+          deploy_hosts=()
+
           for host in $hosts; do
-            echo "Deploying backend to $host"
-            ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$host" \
-              "IMAGE_URI='$IMAGE_URI' CONTAINER_NAME='$BACKEND_CONTAINER_NAME' ENV_FILE='$BACKEND_ENV_FILE' PORTS='$BACKEND_PORTS' HEALTH_URL='$BACKEND_HEALTH_URL' SYSTEMD_SERVICE='$BACKEND_SYSTEMD_SERVICE' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN' MONGO_URI_B64='$mongo_uri_b64' bash -s" < "$remote_script"
+            (
+              echo "Deploying backend to $host"
+              ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$host" \
+                "IMAGE_URI='$IMAGE_URI' CONTAINER_NAME='$BACKEND_CONTAINER_NAME' ENV_FILE='$BACKEND_ENV_FILE' PORTS='$BACKEND_PORTS' HEALTH_URL='$BACKEND_HEALTH_URL' SYSTEMD_SERVICE='$BACKEND_SYSTEMD_SERVICE' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN' MONGO_URI_B64='$mongo_uri_b64' bash -s" < "$remote_script"
+            ) &
+            pids+=("$!")
+            deploy_hosts+=("$host")
+          done
+
+          failed=0
+          for i in "${!pids[@]}"; do
+            if ! wait "${pids[$i]}"; then
+              echo "::error::Backend deployment failed on ${deploy_hosts[$i]}"
+              failed=1
+            fi
           done
 
           rm -f "$remote_script"
+          exit "$failed"
