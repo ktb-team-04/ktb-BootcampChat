@@ -48,10 +48,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate deployment config
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
           test -n "$BACKEND_IMAGE_NAME" || { echo "BACKEND_IMAGE_NAME variable is required"; exit 1; }
           test -n "$BACKEND_DEPLOY_HOSTS" || { echo "BACKEND_DEPLOY_HOSTS variable is required"; exit 1; }
           test -n "$DEPLOY_USER" || { echo "DEPLOY_USER variable is required"; exit 1; }
+          test -n "$MONGO_URI" || { echo "MONGO_URI secret is required"; exit 1; }
           test -n "${{ secrets.DEPLOY_SSH_KEY }}" || { echo "DEPLOY_SSH_KEY secret is required"; exit 1; }
           test -n "${{ secrets.GHCR_USERNAME }}" || { echo "GHCR_USERNAME secret is required"; exit 1; }
           test -n "${{ secrets.GHCR_TOKEN }}" || { echo "GHCR_TOKEN secret is required"; exit 1; }
@@ -109,29 +112,47 @@ jobs:
           IMAGE_URI: ${{ steps.image.outputs.uri }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
           set -euo pipefail
+
+          mongo_uri_b64="$(printf '%s' "$MONGO_URI" | base64 | tr -d '\n')"
 
           remote_script="$(mktemp)"
           cat > "$remote_script" <<'SCRIPT'
           set -euo pipefail
+
+          mongo_uri="$(printf '%s' "${MONGO_URI_B64:?MONGO_URI_B64 is required}" | base64 --decode)"
+
           if [ -n "$SYSTEMD_SERVICE" ]; then
             sudo systemctl stop "$SYSTEMD_SERVICE" 2>/dev/null || true
           fi
+
           printf '%s' "$GHCR_TOKEN" | sudo docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
           sudo docker pull "$IMAGE_URI"
           sudo docker stop "$CONTAINER_NAME" 2>/dev/null || true
           sudo docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
           env_file_arg=()
           if [ -n "$ENV_FILE" ]; then
             env_file_arg=(--env-file "$ENV_FILE")
           fi
+
           read -r -a port_args <<< "$PORTS"
-          sudo docker run -d --name "$CONTAINER_NAME" --restart unless-stopped "${env_file_arg[@]}" "${port_args[@]}" "$IMAGE_URI"
+
+          sudo docker run -d \
+            --name "$CONTAINER_NAME" \
+            --restart unless-stopped \
+            "${env_file_arg[@]}" \
+            -e "MONGO_URI=$mongo_uri" \
+            "${port_args[@]}" \
+            "$IMAGE_URI"
+
           for i in $(seq 1 30); do
             curl -fsS "$HEALTH_URL" >/dev/null && exit 0
             sleep 2
           done
+
           sudo docker logs --tail 100 "$CONTAINER_NAME"
           exit 1
           SCRIPT
@@ -140,7 +161,7 @@ jobs:
           for host in $hosts; do
             echo "Deploying backend to $host"
             ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$host" \
-              "IMAGE_URI='$IMAGE_URI' CONTAINER_NAME='$BACKEND_CONTAINER_NAME' ENV_FILE='$BACKEND_ENV_FILE' PORTS='$BACKEND_PORTS' HEALTH_URL='$BACKEND_HEALTH_URL' SYSTEMD_SERVICE='$BACKEND_SYSTEMD_SERVICE' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN' bash -s" < "$remote_script"
+              "IMAGE_URI='$IMAGE_URI' CONTAINER_NAME='$BACKEND_CONTAINER_NAME' ENV_FILE='$BACKEND_ENV_FILE' PORTS='$BACKEND_PORTS' HEALTH_URL='$BACKEND_HEALTH_URL' SYSTEMD_SERVICE='$BACKEND_SYSTEMD_SERVICE' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN' MONGO_URI_B64='$mongo_uri_b64' bash -s" < "$remote_script"
           done
 
           rm -f "$remote_script"

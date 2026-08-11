@@ -11,7 +11,7 @@ public class MongoTestContainer {
     @Bean
     @ServiceConnection
     MongoDBContainer mongoDBContainer() {
-        return new MongoDBContainer("mongo:8.3.4")
+        return new MongoDBContainer("mongo:8.0.4")
                 .withExposedPorts(27017);
     }
 }
