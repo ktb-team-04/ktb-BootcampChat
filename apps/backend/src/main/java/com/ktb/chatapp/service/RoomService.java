@@ -208,20 +208,6 @@ public class RoomService {
             int recentMessageCount) {
         if (room == null) return null;
 
-        return mapToRoomResponse(
-                room,
-                name,
-                usersById,
-                recentMessageCounter.countRecentMessages(room.getId()));
-    }
-
-    private RoomResponse mapToRoomResponse(
-            Room room,
-            String name,
-            Map<String, User> usersById,
-            int recentMessageCount) {
-        if (room == null) return null;
-
         User creator = usersById.get(room.getCreator());
 
         List<User> participants = room.getParticipantIds().stream()
