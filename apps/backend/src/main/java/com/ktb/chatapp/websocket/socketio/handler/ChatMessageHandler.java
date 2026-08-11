@@ -10,7 +10,6 @@ import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.*;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.service.ChatLookupCache;
 import com.ktb.chatapp.util.BannedWordChecker;
 import com.ktb.chatapp.websocket.socketio.ai.AiService;
@@ -20,6 +19,7 @@ import com.ktb.chatapp.service.SessionValidationResult;
 import com.ktb.chatapp.service.RateLimitService;
 import com.ktb.chatapp.service.RateLimitCheckResult;
 import com.ktb.chatapp.service.RecentRoomMessageCache;
+import com.ktb.chatapp.service.message.BufferedMessageWriteService;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -40,7 +40,6 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @RequiredArgsConstructor
 public class ChatMessageHandler {
     private final SocketIOServer socketIOServer;
-    private final MessageRepository messageRepository;
     private final ChatLookupCache chatLookupCache;
     private final FileRepository fileRepository;
     private final AiService aiService;
@@ -50,6 +49,7 @@ public class ChatMessageHandler {
     private final RateLimitService rateLimitService;
     private final MeterRegistry meterRegistry;
     private final RecentRoomMessageCache recentRoomMessageCache;
+    private final BufferedMessageWriteService messageWriteService;
     
     @OnEvent(CHAT_MESSAGE)
     public void handleChatMessage(SocketIOClient client, ChatMessageRequest data) {
@@ -162,7 +162,7 @@ public class ChatMessageHandler {
                 return;
             }
 
-            Message savedMessage = messageRepository.save(message);
+            Message savedMessage = messageWriteService.write(message, "text".equals(messageType));
             MessageResponse messageResponse = createMessageResponse(
                     savedMessage, sender, preparedMessage.file());
             recentRoomMessageCache.append(roomId, messageResponse);

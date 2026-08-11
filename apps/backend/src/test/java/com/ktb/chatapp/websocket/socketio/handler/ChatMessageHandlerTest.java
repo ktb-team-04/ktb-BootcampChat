@@ -9,7 +9,6 @@ import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.service.ChatLookupCache;
 import com.ktb.chatapp.service.RateLimitCheckResult;
 import com.ktb.chatapp.service.RateLimitService;
@@ -17,6 +16,7 @@ import com.ktb.chatapp.service.RecentRoomMessageCache;
 import com.ktb.chatapp.service.RoomActivityNotifier;
 import com.ktb.chatapp.service.SessionService;
 import com.ktb.chatapp.service.SessionValidationResult;
+import com.ktb.chatapp.service.message.BufferedMessageWriteService;
 import com.ktb.chatapp.util.BannedWordChecker;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.ai.AiService;
@@ -42,7 +42,6 @@ import static org.mockito.Mockito.*;
 class ChatMessageHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
-    @Mock private MessageRepository messageRepository;
     @Mock private ChatLookupCache chatLookupCache;
     @Mock private FileRepository fileRepository;
     @Mock private AiService aiService;
@@ -51,6 +50,7 @@ class ChatMessageHandlerTest {
     @Mock private BannedWordChecker bannedWordChecker;
     @Mock private RateLimitService rateLimitService;
     @Mock private RecentRoomMessageCache recentRoomMessageCache;
+    @Mock private BufferedMessageWriteService messageWriteService;
     private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private ChatMessageHandler handler;
@@ -60,7 +60,6 @@ class ChatMessageHandlerTest {
         handler =
                 new ChatMessageHandler(
                         socketIOServer,
-                        messageRepository,
                         chatLookupCache,
                         fileRepository,
                         aiService,
@@ -69,7 +68,8 @@ class ChatMessageHandlerTest {
                         bannedWordChecker,
                         rateLimitService,
                         meterRegistry,
-                        recentRoomMessageCache);
+                        recentRoomMessageCache,
+                        messageWriteService);
     }
 
     @Test
@@ -105,7 +105,7 @@ class ChatMessageHandlerTest {
         verify(client).sendEvent(eq(ERROR), payloadCaptor.capture());
         Map<String, String> payload = payloadCaptor.getValue();
         org.junit.jupiter.api.Assertions.assertEquals("MESSAGE_REJECTED", payload.get("code"));
-        verifyNoInteractions(messageRepository);
+        verifyNoInteractions(messageWriteService);
         verify(socketIOServer, never()).getRoomOperations(any());
     }
 
@@ -127,7 +127,7 @@ class ChatMessageHandlerTest {
         when(chatLookupCache.canAccessRoom("room-1", "user-1")).thenReturn(true);
         when(bannedWordChecker.containsBannedWord("hello")).thenReturn(false);
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
-        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+        when(messageWriteService.write(any(Message.class), eq(true))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             message.setId("message-1");
             message.setTimestamp(LocalDateTime.of(2026, 7, 7, 9, 0));
@@ -181,7 +181,7 @@ class ChatMessageHandlerTest {
                 .build();
         when(fileRepository.findById("file-1")).thenReturn(Optional.of(file));
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
-        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+        when(messageWriteService.write(any(Message.class), eq(false))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             message.setId("message-1");
             message.setTimestamp(LocalDateTime.of(2026, 8, 10, 17, 0));
