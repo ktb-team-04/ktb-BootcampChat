@@ -122,4 +122,41 @@ describe('useMessageHandling', () => {
     expect(result.current.filePreview).toBeNull();
     expect(result.current.uploadError).toBeNull();
   });
+
+  it('removes only the failed optimistic text message when sending fails', async () => {
+    const roomSocket = { connected: true };
+    const socketRef = { current: roomSocket };
+    const existingOptimistic = {
+      _id: 'optimistic-existing',
+      room: roomId,
+      type: 'text',
+      content: 'still pending',
+      _optimistic: true,
+    };
+    let committedMessages = [existingOptimistic];
+    const setMessages = vi.fn(updater => {
+      committedMessages = updater(committedMessages);
+    });
+    socketClient.sendChatMessageAndWait.mockRejectedValueOnce(new Error('send failed'));
+
+    const { result } = renderHook(() =>
+      useMessageHandling(
+        currentUser,
+        roomId,
+        vi.fn(),
+        committedMessages,
+        false,
+        vi.fn(),
+        socketRef,
+        true,
+        setMessages,
+      )
+    );
+
+    await act(async () => {
+      await result.current.handleMessageSubmit({ type: 'text', content: 'failed message' });
+    });
+
+    expect(committedMessages).toEqual([existingOptimistic]);
+  });
 });

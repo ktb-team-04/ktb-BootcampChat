@@ -80,9 +80,8 @@ export default function ChatRoomsView({ router }) {
     let cancelled = false;
 
     const initFetch = async () => {
-      try {
-        await fetchRooms();
-      } catch (error) {
+      const fetched = await fetchRooms();
+      if (!fetched) {
         retryTimer = setTimeout(() => {
           if (!cancelled) {
             fetchRooms();
@@ -102,7 +101,12 @@ export default function ChatRoomsView({ router }) {
   }, [currentUserKey, fetchRooms]);
 
   useEffect(() => {
-    if (!currentUserKey || connectionStatus !== CONNECTION_STATUS.CHECKING) return;
+    if (
+      !currentUserKey ||
+      ![CONNECTION_STATUS.CHECKING, CONNECTION_STATUS.ERROR].includes(connectionStatus)
+    ) {
+      return;
+    }
 
     connectionCheckTimerRef.current = setInterval(() => {
       attemptConnection();

@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import axiosInstance from '@/services/axios';
 import { CONNECTION_STATUS } from './useServerConnection';
 
-const ROOM_JOIN_NAVIGATION_FALLBACK_MS = 1200;
+const ROOM_JOIN_NAVIGATION_FALLBACK_MS = 1000;
 
 const defaultHardNavigate = (path) => {
   if (typeof window !== 'undefined') {
@@ -87,7 +87,7 @@ export const useRoomList = ({
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser?.token || isLoadingRef.current) {
-      return;
+      return false;
     }
 
     try {
@@ -101,8 +101,10 @@ export const useRoomList = ({
       if (isInitialLoad) {
         setIsInitialLoad(false);
       }
+      return true;
     } catch (error) {
       handleFetchError(error);
+      return false;
     } finally {
       setLoading(false);
       isLoadingRef.current = false;
@@ -160,7 +162,6 @@ export const useRoomList = ({
 
       if (response.data.success) {
         const roomPath = `/chat/${roomId}`;
-        router.push(roomPath);
 
         clearJoinNavigationFallback();
         joinNavigationFallbackRef.current = setTimeout(() => {
@@ -169,6 +170,8 @@ export const useRoomList = ({
             hardNavigate(roomPath);
           }
         }, ROOM_JOIN_NAVIGATION_FALLBACK_MS);
+
+        await Promise.resolve(router.push(roomPath));
       }
     } catch (error) {
       let errorMessage = '입장에 실패했습니다.';

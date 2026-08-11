@@ -109,6 +109,34 @@ describe('ChatRoomsView', () => {
     expect(mocks.refreshRooms).not.toHaveBeenCalled();
   });
 
+  it('retries the initial room fetch when the first attempt reports failure', async () => {
+    vi.useFakeTimers();
+    mocks.fetchRooms
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    await Promise.resolve();
+
+    expect(mocks.fetchRooms).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(mocks.fetchRooms).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps probing the server while the connection is in error state', async () => {
+    mocks.connectionStatus = CONNECTION_STATUS.ERROR;
+    vi.useFakeTimers();
+
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(mocks.attemptConnection).toHaveBeenCalled();
+  });
+
   it('catches up as soon as the tab becomes visible again', async () => {
     mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
 
