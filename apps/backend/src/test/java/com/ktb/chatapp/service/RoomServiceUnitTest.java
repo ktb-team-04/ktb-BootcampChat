@@ -7,14 +7,15 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,7 +40,20 @@ class RoomServiceUnitTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private ApplicationEventPublisher eventPublisher;
 
-    @InjectMocks private RoomService roomService;
+    private RoomService roomService;
+
+    @BeforeEach
+    void setUp() {
+        roomService = new RoomService(
+                roomRepository,
+                userRepository,
+                recentMessageCounter,
+                chatLookupCache,
+                passwordEncoder,
+                eventPublisher,
+                Duration.ofSeconds(2),
+                1000);
+    }
 
     @Test
     @DisplayName("방 목록의 생성자와 참가자를 한 번의 사용자 조회로 변환한다")
@@ -68,6 +82,26 @@ class RoomServiceUnitTest {
         verify(userRepository, times(1)).findAllById(anySet());
         verify(recentMessageCounter, times(1))
                 .countRecentMessages(List.of("room-1", "room-2"));
+    }
+
+    @Test
+    @DisplayName("방 목록은 사용자별 로컬 캐시를 사용한다")
+    void getAllRooms_UsesLocalCachePerUser() {
+        User first = User.builder().id("user-1").name("first").email("first@example.com").build();
+        Room firstRoom = room("room-1", "user-1", Set.of("user-1"));
+
+        when(roomRepository.findAll()).thenReturn(List.of(firstRoom));
+        when(userRepository.findAllById(anySet())).thenReturn(List.of(first));
+        when(recentMessageCounter.countRecentMessages(List.of("room-1")))
+                .thenReturn(Map.of("room-1", 7));
+
+        roomService.getAllRooms("first@example.com");
+        roomService.getAllRooms("first@example.com");
+
+        verify(roomRepository, times(1)).findAll();
+        verify(userRepository, times(1)).findAllById(anySet());
+        verify(recentMessageCounter, times(1))
+                .countRecentMessages(List.of("room-1"));
     }
 
     @Test
