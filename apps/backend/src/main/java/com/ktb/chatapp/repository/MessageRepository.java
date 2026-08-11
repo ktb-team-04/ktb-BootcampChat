@@ -8,9 +8,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.mongodb.repository.ReadPreference;
 
 @Repository
 public interface MessageRepository extends MongoRepository<Message, String> {
+    @ReadPreference("secondaryPreferred")
     Page<Message> findByRoomIdAndTimestampBefore(String roomId, LocalDateTime timestamp, Pageable pageable);
     /**
      * 특정 시간 이후의 메시지 수 카운트
