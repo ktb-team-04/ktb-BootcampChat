@@ -8,6 +8,7 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.RecentRoomMessageCache;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -33,15 +34,35 @@ public class MessageLoader {
     private final UserRepository userRepository;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageReadStatusService messageReadStatusService;
-
-    private static final int BATCH_SIZE = 30;
+    private final RecentRoomMessageCache recentRoomMessageCache;
 
     /**
      * 메시지 로드
      */
     public FetchMessagesResponse loadMessages(FetchMessagesRequest data, String userId) {
         try {
-            return loadMessagesInternal(data.roomId(), data.limit(BATCH_SIZE), data.before(LocalDateTime.now()), userId);
+            int maxFirstPageSize = recentRoomMessageCache.maxSize();
+            int limit = Math.min(data.limit(maxFirstPageSize), maxFirstPageSize);
+            boolean firstPage = data.before() == null;
+            if (firstPage) {
+                var cached = recentRoomMessageCache.getFirstPage(data.roomId(), limit);
+                if (cached.isPresent()) {
+                    var cachedMessages = cached.orElseThrow();
+                    updateReadStatusFromResponses(cachedMessages.messages(), userId);
+                    return FetchMessagesResponse.builder()
+                            .messages(cachedMessages.messages())
+                            .hasMore(cachedMessages.hasMore())
+                            .build();
+                }
+            }
+
+            FetchMessagesResponse response =
+                    loadMessagesInternal(data.roomId(), limit, data.before(LocalDateTime.now()), userId);
+            if (firstPage) {
+                recentRoomMessageCache.cacheFirstPage(
+                        data.roomId(), response.getMessages(), response.isHasMore());
+            }
+            return response;
         } catch (Exception e) {
             log.error("Error loading initial messages for room {}", data.roomId(), e);
             return FetchMessagesResponse.builder()
@@ -66,8 +87,9 @@ public class MessageLoader {
         // DESC로 조회했으므로 ASC로 재정렬 (채팅 UI 표시 순서)
         List<Message> sortedMessages = messages.reversed();
 
-        var messageIds = sortedMessages.stream().map(Message::getId).toList();
-        messageReadStatusService.updateReadStatus(messageIds, userId);
+        updateReadStatus(sortedMessages.stream()
+                .map(Message::getId)
+                .toList(), userId);
 
         // 발신자를 메시지마다 조회하지 않고 현재 배치에 필요한 사용자만 한 번에 읽는다.
         Set<String> senderIds = sortedMessages.stream()
@@ -92,6 +114,16 @@ public class MessageLoader {
                 .messages(messageResponses)
                 .hasMore(hasMore)
                 .build();
+    }
+
+    private void updateReadStatusFromResponses(List<MessageResponse> messages, String userId) {
+        updateReadStatus(messages.stream()
+                .map(MessageResponse::getId)
+                .toList(), userId);
+    }
+
+    private void updateReadStatus(List<String> messageIds, String userId) {
+        messageReadStatusService.updateReadStatus(messageIds, userId);
     }
 
 }
