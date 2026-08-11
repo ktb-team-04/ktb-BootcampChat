@@ -7,8 +7,8 @@ const {
 } = require('../../actions/chat.actions');
 const { bannedWordSafeText } = require('../../utils/bannedWordSafeText');
 const { expect } = require('@playwright/test');
+const path = require('path');
 const { randomUUID } = require('crypto');
-const { getLoadImageFixture } = require('../../fixtures/loadImageFixture');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const MASS_MESSAGE_COUNT = process.env.MASS_MESSAGE_COUNT || 10;
@@ -84,7 +84,7 @@ async function fileUploadScenario(page, vuContext) {
         await expect(page).toHaveURL(new RegExp(`${BASE_URL}/chat/\\w+`));
 
         // 2. 이미지 파일 업로드
-        const fileFixture = getLoadImageFixture();
+        const filePath = path.resolve(__dirname, '../../fixtures/images/profile.jpg');
         const message = `파일 업로드 부하 테스트 ${bannedWordSafeText(Date.now())}`;
 
         const uploadPromise = page.waitForResponse(
@@ -92,7 +92,7 @@ async function fileUploadScenario(page, vuContext) {
             { timeout: 15000 }
         );
 
-        await uploadFileAction(page, fileFixture, message);
+        await uploadFileAction(page, filePath, message);
         await uploadPromise;
 
         await page.waitForTimeout(ACTION_TIMEOUT);
