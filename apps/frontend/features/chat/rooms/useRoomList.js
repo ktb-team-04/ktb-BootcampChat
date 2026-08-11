@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import axiosInstance from '@/services/axios';
 import { CONNECTION_STATUS } from './useServerConnection';
 
-const ROOM_JOIN_NAVIGATION_FALLBACK_MS = 1000;
+const ROOM_JOIN_NAVIGATION_FALLBACK_DELAYS_MS = [1000, 2000, 3500];
 
 const defaultHardNavigate = (path) => {
   if (typeof window !== 'undefined') {
@@ -33,7 +33,7 @@ export const useRoomList = ({
 
   const clearJoinNavigationFallback = useCallback(() => {
     if (joinNavigationFallbackRef.current) {
-      clearTimeout(joinNavigationFallbackRef.current);
+      joinNavigationFallbackRef.current.forEach(clearTimeout);
       joinNavigationFallbackRef.current = null;
     }
     joinNavigationTargetRef.current = null;
@@ -43,20 +43,21 @@ export const useRoomList = ({
     clearJoinNavigationFallback();
     joinNavigationTargetRef.current = roomPath;
 
-    joinNavigationFallbackRef.current = setTimeout(() => {
-      if (joinNavigationTargetRef.current !== roomPath) {
-        return;
-      }
+    joinNavigationFallbackRef.current = ROOM_JOIN_NAVIGATION_FALLBACK_DELAYS_MS.map((delay) =>
+      setTimeout(() => {
+        if (joinNavigationTargetRef.current !== roomPath) {
+          return;
+        }
 
-      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-      if (currentPath === roomPath) {
-        joinNavigationFallbackRef.current = null;
-        joinNavigationTargetRef.current = null;
-        return;
-      }
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+        if (currentPath === roomPath) {
+          clearJoinNavigationFallback();
+          return;
+        }
 
-      hardNavigate(roomPath);
-    }, ROOM_JOIN_NAVIGATION_FALLBACK_MS);
+        hardNavigate(roomPath);
+      }, delay)
+    );
   }, [clearJoinNavigationFallback, hardNavigate]);
 
   const handleFetchError = useCallback((error) => {
@@ -97,8 +98,6 @@ export const useRoomList = ({
   }, [isRetrying, setConnectionStatus]);
 
   const loadRooms = useCallback(async () => {
-    await attemptConnection();
-
     const response = await axiosInstance.get('/api/rooms');
 
     if (!response?.data?.data) {
@@ -106,7 +105,8 @@ export const useRoomList = ({
     }
 
     setRooms(response.data.data);
-  }, [attemptConnection]);
+    setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+  }, [setConnectionStatus]);
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser?.token || isLoadingRef.current) {
