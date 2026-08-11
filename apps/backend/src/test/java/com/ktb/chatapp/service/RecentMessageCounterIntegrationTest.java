@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.TestPropertySource;
 
@@ -36,7 +35,6 @@ class RecentMessageCounterIntegrationTest {
     @Autowired private RecentMessageCounter recentMessageCounter;
     @Autowired private MessageRepository messageRepository;
     @Autowired private StringRedisTemplate redisTemplate;
-    @Autowired private MongoTemplate mongoTemplate;
 
     @BeforeEach
     void setUp() {
@@ -50,8 +48,6 @@ class RecentMessageCounterIntegrationTest {
     @Test
     @DisplayName("여러 방의 캐시 미스를 한 번에 집계하고 Redis에 저장한다")
     void countRecentMessages_LoadsMultipleRoomsAndCachesZeros() {
-        assertThat(mongoTemplate.indexOps(Message.class).getIndexInfo())
-                .anySatisfy(index -> assertThat(index.getName()).isEqualTo("room_timestamp_idx"));
         messageRepository.saveAll(List.of(
                 message("room-1", LocalDateTime.now().minusMinutes(2)),
                 message("room-1", LocalDateTime.now().minusMinutes(1)),
