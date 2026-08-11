@@ -19,10 +19,10 @@ public class MessageIndexConfiguration {
 
     @Bean
     ApplicationRunner ensureMessageIndexes(MongoTemplate mongoTemplate) {
-        return args -> mongoTemplate.indexOps(Message.class).createIndex(
+        return args -> mongoTemplate.indexOps(Message.class).ensureIndex(
                 new Index()
                         .on("room", Direction.ASC)
-                        .on("timestamp", Direction.ASC)
+                        .on("timestamp", Direction.DESC)
                         .named("room_timestamp_idx"));
     }
 }
