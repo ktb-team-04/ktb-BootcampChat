@@ -1,8 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import axiosInstance from '@/services/axios';
 import { CONNECTION_STATUS } from './useServerConnection';
-
-const ROOM_JOIN_NAVIGATION_FALLBACK_MS = 1000;
 
 const defaultHardNavigate = (path) => {
   if (typeof window !== 'undefined') {
@@ -12,7 +10,6 @@ const defaultHardNavigate = (path) => {
 
 export const useRoomList = ({
   currentUser,
-  router,
   connectionStatus,
   setConnectionStatus,
   isRetrying,
@@ -28,36 +25,6 @@ export const useRoomList = ({
 
   const isLoadingRef = useRef(false);
   const isJoiningRoomRef = useRef(false);
-  const joinNavigationFallbackRef = useRef(null);
-  const joinNavigationTargetRef = useRef(null);
-
-  const clearJoinNavigationFallback = useCallback(() => {
-    if (joinNavigationFallbackRef.current) {
-      clearTimeout(joinNavigationFallbackRef.current);
-      joinNavigationFallbackRef.current = null;
-    }
-    joinNavigationTargetRef.current = null;
-  }, []);
-
-  const scheduleJoinNavigationFallback = useCallback((roomPath) => {
-    clearJoinNavigationFallback();
-    joinNavigationTargetRef.current = roomPath;
-
-    joinNavigationFallbackRef.current = setTimeout(() => {
-      if (joinNavigationTargetRef.current !== roomPath) {
-        return;
-      }
-
-      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-      if (currentPath === roomPath) {
-        joinNavigationFallbackRef.current = null;
-        joinNavigationTargetRef.current = null;
-        return;
-      }
-
-      hardNavigate(roomPath);
-    }, ROOM_JOIN_NAVIGATION_FALLBACK_MS);
-  }, [clearJoinNavigationFallback, hardNavigate]);
 
   const handleFetchError = useCallback((error) => {
     let errorMessage = '채팅방 목록을 불러오는데 실패했습니다.';
@@ -97,8 +64,6 @@ export const useRoomList = ({
   }, [isRetrying, setConnectionStatus]);
 
   const loadRooms = useCallback(async () => {
-    await attemptConnection();
-
     const response = await axiosInstance.get('/api/rooms');
 
     if (!response?.data?.data) {
@@ -106,7 +71,8 @@ export const useRoomList = ({
     }
 
     setRooms(response.data.data);
-  }, [attemptConnection]);
+    setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+  }, [setConnectionStatus]);
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser?.token || isLoadingRef.current) {
@@ -193,9 +159,7 @@ export const useRoomList = ({
         const roomPath = `/chat/${roomId}`;
 
         navigationStarted = true;
-        scheduleJoinNavigationFallback(roomPath);
-
-        await Promise.resolve(router.push(roomPath));
+        hardNavigate(roomPath);
       }
     } catch (error) {
       navigationStarted = false;
@@ -211,16 +175,13 @@ export const useRoomList = ({
         message: error.response?.data?.message || errorMessage,
         type: 'danger',
       });
-      clearJoinNavigationFallback();
     } finally {
       if (!navigationStarted) {
         isJoiningRoomRef.current = false;
         setJoiningRoom(false);
       }
     }
-  }, [connectionStatus, router, clearJoinNavigationFallback, scheduleJoinNavigationFallback]);
-
-  useEffect(() => clearJoinNavigationFallback, [clearJoinNavigationFallback]);
+  }, [connectionStatus, hardNavigate]);
 
   return {
     rooms,
