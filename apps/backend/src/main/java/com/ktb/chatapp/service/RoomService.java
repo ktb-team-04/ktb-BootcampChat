@@ -1,5 +1,7 @@
 package com.ktb.chatapp.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.ktb.chatapp.dto.*;
 import com.ktb.chatapp.event.RoomCreatedEvent;
 import com.ktb.chatapp.event.RoomUpdatedEvent;
@@ -7,6 +9,7 @@ import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -17,15 +20,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RoomService {
 
     private final RoomRepository roomRepository;
@@ -34,40 +36,33 @@ public class RoomService {
     private final ChatLookupCache chatLookupCache;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
+    private final Cache<String, RoomsResponse> roomListCache;
+
+    public RoomService(
+            RoomRepository roomRepository,
+            UserRepository userRepository,
+            RecentMessageCounter recentMessageCounter,
+            ChatLookupCache chatLookupCache,
+            PasswordEncoder passwordEncoder,
+            ApplicationEventPublisher eventPublisher,
+            @Value("${app.room-list.cache.ttl:2s}") Duration roomListCacheTtl,
+            @Value("${app.room-list.cache.max-size:1000}") long roomListCacheMaxSize) {
+        this.roomRepository = roomRepository;
+        this.userRepository = userRepository;
+        this.recentMessageCounter = recentMessageCounter;
+        this.chatLookupCache = chatLookupCache;
+        this.passwordEncoder = passwordEncoder;
+        this.eventPublisher = eventPublisher;
+        this.roomListCache = Caffeine.newBuilder()
+                .maximumSize(Math.max(1, roomListCacheMaxSize))
+                .expireAfterWrite(roomListCacheTtl)
+                .recordStats()
+                .build();
+    }
 
     public RoomsResponse getAllRooms(String name) {
-
         try {
-            // 모든 방의 사용자 정보를 한 번에 읽어 방/참가자 수에 비례하는 N+1 조회를 피한다.
-            List<Room> rooms = roomRepository.findAll();
-            Map<String, User> usersById = loadUsersById(rooms);
-            Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(
-                    rooms.stream().map(Room::getId).toList());
-            List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(
-                        room,
-                        name,
-                        usersById,
-                        recentMessageCounts.getOrDefault(room.getId(), 0)))
-                .sorted(Comparator.comparing(
-                    RoomResponse::getCreatedAtDateTime,
-                    Comparator.nullsLast(Comparator.reverseOrder())))
-                .collect(Collectors.toList());
-
-            PageMetadata metadata = PageMetadata.builder()
-                .total(roomResponses.size())
-                .page(0)
-                .pageSize(roomResponses.size())
-                .totalPages(1)
-                .hasMore(false)
-                .currentCount(roomResponses.size())
-                .build();
-
-            return RoomsResponse.builder()
-                .success(true)
-                .data(roomResponses)
-                .metadata(metadata)
-                .build();
+            return roomListCache.get(cacheKey(name), ignored -> loadAllRooms(name));
 
         } catch (Exception e) {
             log.error("방 목록 조회 에러", e);
@@ -76,6 +71,39 @@ public class RoomService {
                 .data(List.of())
                 .build();
         }
+    }
+
+    private RoomsResponse loadAllRooms(String name) {
+        // 모든 방의 사용자 정보를 한 번에 읽어 방/참가자 수에 비례하는 N+1 조회를 피한다.
+        List<Room> rooms = roomRepository.findAll();
+        Map<String, User> usersById = loadUsersById(rooms);
+        Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(
+                rooms.stream().map(Room::getId).toList());
+        List<RoomResponse> roomResponses = rooms.stream()
+            .map(room -> mapToRoomResponse(
+                    room,
+                    name,
+                    usersById,
+                    recentMessageCounts.getOrDefault(room.getId(), 0)))
+            .sorted(Comparator.comparing(
+                RoomResponse::getCreatedAtDateTime,
+                Comparator.nullsLast(Comparator.reverseOrder())))
+            .collect(Collectors.toList());
+
+        PageMetadata metadata = PageMetadata.builder()
+            .total(roomResponses.size())
+            .page(0)
+            .pageSize(roomResponses.size())
+            .totalPages(1)
+            .hasMore(false)
+            .currentCount(roomResponses.size())
+            .build();
+
+        return RoomsResponse.builder()
+            .success(true)
+            .data(roomResponses)
+            .metadata(metadata)
+            .build();
     }
 
     public HealthResponse getHealthStatus() {
@@ -140,6 +168,7 @@ public class RoomService {
 
         Room savedRoom = roomRepository.save(room);
         chatLookupCache.invalidateRoom(savedRoom.getId());
+        invalidateRoomListCache();
         
         // Publish event for room created
         try {
@@ -181,6 +210,7 @@ public class RoomService {
             room.getParticipantIds().add(user.getId());
             room = roomRepository.save(room);
             chatLookupCache.invalidateRoom(room.getId());
+            invalidateRoomListCache();
             participantAdded = true;
         }
         
@@ -195,6 +225,14 @@ public class RoomService {
         }
 
         return room;
+    }
+
+    private void invalidateRoomListCache() {
+        roomListCache.invalidateAll();
+    }
+
+    private String cacheKey(String name) {
+        return name == null ? "anonymous" : name.toLowerCase();
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name) {
