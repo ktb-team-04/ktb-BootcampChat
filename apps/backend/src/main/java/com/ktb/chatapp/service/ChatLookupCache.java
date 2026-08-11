@@ -8,8 +8,8 @@ import com.ktb.chatapp.repository.UserRepository;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -21,13 +21,23 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ChatLookupCache {
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
     private final RoomRepository roomRepository;
+
+    public ChatLookupCache(
+            @Qualifier("cacheRedisTemplate") StringRedisTemplate redisTemplate,
+            ObjectMapper objectMapper,
+            UserRepository userRepository,
+            RoomRepository roomRepository) {
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.userRepository = userRepository;
+        this.roomRepository = roomRepository;
+    }
 
     @Value("${app.chat-lookup.cache.user-key-prefix:chat:lookup:user:}")
     private String userKeyPrefix;

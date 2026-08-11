@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -49,7 +50,7 @@ public class RecentMessageCounter {
 
     public RecentMessageCounter(
             MongoTemplate mongoTemplate,
-            StringRedisTemplate redisTemplate,
+            @Qualifier("cacheRedisTemplate") StringRedisTemplate redisTemplate,
             @Value("${app.recent-message.cache.key-prefix:chat:recent-message-count:}") String keyPrefix,
             @Value("${app.recent-message.cache.ttl:5s}") Duration cacheTtl) {
         this.mongoTemplate = mongoTemplate;
