@@ -173,20 +173,25 @@ public class RoomService {
             }
         }
 
+        boolean participantAdded = false;
+
         // 이미 참여중인지 확인
         if (!room.getParticipantIds().contains(user.getId())) {
             // 채팅방 참여
             room.getParticipantIds().add(user.getId());
             room = roomRepository.save(room);
             chatLookupCache.invalidateRoom(room.getId());
+            participantAdded = true;
         }
         
-        // Publish event for room updated
-        try {
-            RoomResponse roomResponse = mapToRoomResponse(room, name);
-            eventPublisher.publishEvent(new RoomUpdatedEvent(this, roomId, roomResponse));
-        } catch (Exception e) {
-            log.error("roomUpdate 이벤트 발행 실패", e);
+        if (participantAdded) {
+            // Publish event for room updated
+            try {
+                RoomResponse roomResponse = mapToRoomResponse(room, name);
+                eventPublisher.publishEvent(new RoomUpdatedEvent(this, roomId, roomResponse));
+            } catch (Exception e) {
+                log.error("roomUpdate 이벤트 발행 실패", e);
+            }
         }
 
         return room;

@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axiosInstance from '@/services/axios';
 import { useRoomList } from '../useRoomList';
 import { CONNECTION_STATUS } from '../useServerConnection';
@@ -13,7 +13,7 @@ vi.mock('@/services/axios', () => ({
 
 const roomsResponse = (rooms) => ({ data: { data: rooms } });
 
-const renderRoomList = () =>
+const renderRoomList = (overrides = {}) =>
   renderHook(() =>
     useRoomList({
       currentUser: { token: 'token-1' },
@@ -26,12 +26,17 @@ const renderRoomList = () =>
       setIsRetrying: vi.fn(),
       getRetryDelay: vi.fn(() => 1000),
       attemptConnection: vi.fn(() => Promise.resolve(true)),
+      ...overrides,
     })
   );
 
 describe('useRoomList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('replaces the list on refresh without leaving the refreshing flag on', async () => {
@@ -101,5 +106,34 @@ describe('useRoomList', () => {
 
     expect(result.current.error).toBeNull();
     expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+  });
+
+  it('falls back to hard navigation when client-side room navigation stays on the room list', async () => {
+    vi.useFakeTimers();
+    window.history.pushState({}, '', '/chat');
+
+    axiosInstance.post.mockResolvedValue({
+      data: {
+        success: true,
+        data: { _id: 'room-1' },
+      },
+    });
+
+    const hardNavigate = vi.fn();
+    const router = { push: vi.fn() };
+    const { result } = renderRoomList({ router, hardNavigate });
+
+    await act(async () => {
+      await result.current.handleJoinRoom('room-1');
+    });
+
+    expect(router.push).toHaveBeenCalledWith('/chat/room-1');
+    expect(hardNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    expect(hardNavigate).toHaveBeenCalledWith('/chat/room-1');
   });
 });
