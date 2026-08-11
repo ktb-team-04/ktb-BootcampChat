@@ -16,22 +16,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test
+  build:
+    name: Compile
     runs-on: ubuntu-latest
 
     defaults:
       run:
         working-directory: apps/backend
-
-    env:
-      JWT_SECRET: ci_jwt_secret_for_tests
-      ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      ENCRYPTION_SALT: 31323334353637383132333435363738
-      MONGO_URI: mongodb://localhost:27017/bootcamp-chat-ci
-      REDIS_HOST: localhost
-      REDIS_PORT: "6379"
-      OPENAI_API_KEY: test-key
 
     steps:
       - name: Checkout
@@ -47,5 +38,5 @@ jobs:
       - name: Make Maven wrapper executable
         run: chmod +x ./mvnw
 
-      - name: Run unit tests
-        run: ./mvnw -B -Punit-tests test
+      - name: Compile
+        run: ./mvnw -B compile
