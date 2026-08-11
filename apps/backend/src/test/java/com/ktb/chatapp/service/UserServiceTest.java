@@ -38,7 +38,7 @@ class UserServiceTest {
     private FileService fileService;
 
     @Mock
-    private ChatLookupCache chatLookupCache;
+    private AuthUserCache authUserCache;
 
     private UserService userService;
 
@@ -55,7 +55,7 @@ class UserServiceTest {
                 userRepository,
                 fileService,
                 new LocalStorage(uploadDir.toString()),
-                chatLookupCache);
+                authUserCache);
         ReflectionTestUtils.setField(userService, "maxProfileImageSize", 5242880L);
     }
 
@@ -77,6 +77,7 @@ class UserServiceTest {
                 .profileImage("profiles/old.jpg")
                 .build();
         when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(userRepository.save(user)).thenReturn(user);
         when(fileService.storeFile(any(), eq("profiles"))).thenReturn("profiles/new.jpg");
         MockMultipartFile file = new MockMultipartFile(
                 "file", "new.jpg", "image/jpeg", "new-image-bytes".getBytes());
@@ -98,6 +99,7 @@ class UserServiceTest {
                 .profileImage("profiles/old2.jpg")
                 .build();
         when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(userRepository.save(user)).thenReturn(user);
 
         userService.deleteProfileImage(EMAIL);
 

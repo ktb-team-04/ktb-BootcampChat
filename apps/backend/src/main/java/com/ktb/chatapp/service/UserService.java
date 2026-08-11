@@ -26,7 +26,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final FileService fileService;
     private final StoragePort storagePort;
-    private final ChatLookupCache chatLookupCache;
+    private final AuthUserCache authUserCache;
 
     @Value("${app.profile.image.max-size:5242880}") // 5MB
     private long maxProfileImageSize;
@@ -58,7 +58,7 @@ public class UserService {
         user.setUpdatedAt(LocalDateTime.now());
 
         User updatedUser = userRepository.save(user);
-        chatLookupCache.invalidateUser(user.getId());
+        authUserCache.put(updatedUser);
         log.info("사용자 프로필 업데이트 완료 - ID: {}, Name: {}", user.getId(), request.getName());
 
         return UserResponse.from(updatedUser);
@@ -87,8 +87,8 @@ public class UserService {
         // DB에는 key만 저장한다 — URL은 응답 경계에서 조립된다
         user.setProfileImage(profileImageKey);
         user.setUpdatedAt(LocalDateTime.now());
-        userRepository.save(user);
-        chatLookupCache.invalidateUser(user.getId());
+        User updatedUser = userRepository.save(user);
+        authUserCache.put(updatedUser);
 
         log.info("프로필 이미지 업로드 완료 - User ID: {}, Key: {}", user.getId(), profileImageKey);
 
@@ -162,8 +162,8 @@ public class UserService {
             deleteOldProfileImage(user.getProfileImage());
             user.setProfileImage("");
             user.setUpdatedAt(LocalDateTime.now());
-            userRepository.save(user);
-            chatLookupCache.invalidateUser(user.getId());
+            User updatedUser = userRepository.save(user);
+            authUserCache.put(updatedUser);
             log.info("프로필 이미지 삭제 완료 - User ID: {}", user.getId());
         }
     }
@@ -181,7 +181,7 @@ public class UserService {
         }
 
         userRepository.delete(user);
-        chatLookupCache.invalidateUser(user.getId());
+        authUserCache.invalidate(user.getEmail());
         log.info("회원 탈퇴 완료 - User ID: {}", user.getId());
     }
 }

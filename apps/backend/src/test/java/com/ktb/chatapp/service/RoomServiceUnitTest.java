@@ -48,7 +48,7 @@ class RoomServiceUnitTest {
         when(roomRepository.findAll()).thenReturn(List.of(firstRoom, secondRoom));
         when(userRepository.findAllById(anySet())).thenReturn(List.of(first, second));
         when(recentMessageCounter.countRecentMessages(List.of("room-1", "room-2")))
-                .thenReturn(Map.of("room-1", 4, "room-2", 2));
+                .thenReturn(Map.of("room-1", 7, "room-2", 3));
 
         RoomsResponse response = roomService.getAllRooms("first@example.com");
 
@@ -58,6 +58,7 @@ class RoomServiceUnitTest {
             if (room.getId().equals("room-1")) {
                 assertThat(room.isCreator()).isTrue();
                 assertThat(room.getParticipants()).hasSize(2);
+                assertThat(room.getRecentMessageCount()).isEqualTo(7);
             }
         });
         verify(userRepository, times(1)).findAllById(anySet());
