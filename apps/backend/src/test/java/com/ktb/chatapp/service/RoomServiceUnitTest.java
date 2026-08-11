@@ -1,6 +1,7 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.dto.RoomsResponse;
+import com.ktb.chatapp.event.RoomUpdatedEvent;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
@@ -8,6 +9,7 @@ import com.ktb.chatapp.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,7 +21,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,6 +68,22 @@ class RoomServiceUnitTest {
         verify(userRepository, times(1)).findAllById(anySet());
         verify(recentMessageCounter, times(1))
                 .countRecentMessages(List.of("room-1", "room-2"));
+    }
+
+    @Test
+    @DisplayName("이미 참가 중인 사용자의 중복 방 입장은 room update 이벤트를 발행하지 않는다")
+    void joinRoom_DoesNotPublishRoomUpdatedEventWhenParticipantAlreadyJoined() {
+        User user = User.builder().id("user-1").name("first").email("first@example.com").build();
+        Room room = room("room-1", "user-1", Set.of("user-1"));
+
+        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(userRepository.findByEmail("first@example.com")).thenReturn(Optional.of(user));
+
+        Room joinedRoom = roomService.joinRoom("room-1", null, "first@example.com");
+
+        assertThat(joinedRoom).isSameAs(room);
+        verify(roomRepository, never()).save(any(Room.class));
+        verify(eventPublisher, never()).publishEvent(any(RoomUpdatedEvent.class));
     }
 
     private Room room(String id, String creatorId, Set<String> participantIds) {

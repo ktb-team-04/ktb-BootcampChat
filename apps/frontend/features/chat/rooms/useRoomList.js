@@ -1,6 +1,14 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import axiosInstance from '@/services/axios';
 import { CONNECTION_STATUS } from './useServerConnection';
+
+const ROOM_JOIN_NAVIGATION_FALLBACK_MS = 1200;
+
+const defaultHardNavigate = (path) => {
+  if (typeof window !== 'undefined') {
+    window.location.assign(path);
+  }
+};
 
 export const useRoomList = ({
   currentUser,
@@ -9,6 +17,7 @@ export const useRoomList = ({
   setConnectionStatus,
   isRetrying,
   attemptConnection,
+  hardNavigate = defaultHardNavigate,
 }) => {
   const [rooms, setRooms] = useState([]);
   const [error, setError] = useState(null);
@@ -18,6 +27,14 @@ export const useRoomList = ({
   const [joiningRoom, setJoiningRoom] = useState(false);
 
   const isLoadingRef = useRef(false);
+  const joinNavigationFallbackRef = useRef(null);
+
+  const clearJoinNavigationFallback = useCallback(() => {
+    if (joinNavigationFallbackRef.current) {
+      clearTimeout(joinNavigationFallbackRef.current);
+      joinNavigationFallbackRef.current = null;
+    }
+  }, []);
 
   const handleFetchError = useCallback((error) => {
     let errorMessage = '채팅방 목록을 불러오는데 실패했습니다.';
@@ -142,7 +159,16 @@ export const useRoomList = ({
       const response = await axiosInstance.post(`/api/rooms/${roomId}/join`, {});
 
       if (response.data.success) {
-        router.push(`/chat/${roomId}`);
+        const roomPath = `/chat/${roomId}`;
+        router.push(roomPath);
+
+        clearJoinNavigationFallback();
+        joinNavigationFallbackRef.current = setTimeout(() => {
+          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+          if (currentPath !== roomPath) {
+            hardNavigate(roomPath);
+          }
+        }, ROOM_JOIN_NAVIGATION_FALLBACK_MS);
       }
     } catch (error) {
       let errorMessage = '입장에 실패했습니다.';
@@ -160,7 +186,9 @@ export const useRoomList = ({
     } finally {
       setJoiningRoom(false);
     }
-  }, [connectionStatus, router]);
+  }, [connectionStatus, router, clearJoinNavigationFallback, hardNavigate]);
+
+  useEffect(() => clearJoinNavigationFallback, [clearJoinNavigationFallback]);
 
   return {
     rooms,
