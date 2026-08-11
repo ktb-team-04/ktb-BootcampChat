@@ -15,6 +15,7 @@ const ReadStatus = ({
   const [hasMarkedAsRead, setHasMarkedAsRead] = useState(false);
   const statusRef = useRef(null);
   const observerRef = useRef(null);
+  const isPersistedMessage = !String(messageId || '').startsWith('optimistic-');
 
   // 읽지 않은 참여자 명단 생성 
   const unreadParticipants = useMemo(() => {
@@ -38,7 +39,7 @@ const ReadStatus = ({
 
   // 메시지를 읽음으로 표시하는 함수
   const markMessageAsRead = useCallback(async () => {
-    if (!messageId || !currentUserId || hasMarkedAsRead || 
+    if (!messageId || !isPersistedMessage || !currentUserId || hasMarkedAsRead ||
         messageType === 'system' || !socketClient.canSend()) {
       return;
     }
@@ -52,11 +53,11 @@ const ReadStatus = ({
     } catch (error) {
       console.error('Error marking message as read:', error);
     }
-  }, [messageId, currentUserId, hasMarkedAsRead, messageType]);
+  }, [messageId, isPersistedMessage, currentUserId, hasMarkedAsRead, messageType]);
 
   // Intersection Observer 설정
   useEffect(() => {
-    if (!messageRef?.current || !currentUserId || hasMarkedAsRead || messageType === 'system') {
+    if (!messageRef?.current || !isPersistedMessage || !currentUserId || hasMarkedAsRead || messageType === 'system') {
       return;
     }
 
@@ -92,7 +93,7 @@ const ReadStatus = ({
         observerRef.current.disconnect();
       }
     };
-  }, [messageRef, currentUserId, hasMarkedAsRead, messageType, readers, markMessageAsRead]);
+  }, [messageRef, isPersistedMessage, currentUserId, hasMarkedAsRead, messageType, readers, markMessageAsRead]);
 
   // 시스템 메시지는 읽음 상태 표시 안 함
   if (messageType === 'system') {
