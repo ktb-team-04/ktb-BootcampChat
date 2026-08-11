@@ -16,7 +16,7 @@ public class AuthLoadShedder {
     private final MeterRegistry meterRegistry;
 
     public AuthLoadShedder(
-            @Value("${app.auth.max-concurrent-requests:4}") int maxConcurrentRequests,
+            @Value("${app.auth.max-concurrent-requests:8}") int maxConcurrentRequests,
             MeterRegistry meterRegistry) {
         this.permits = new Semaphore(Math.max(1, maxConcurrentRequests));
         this.meterRegistry = meterRegistry;
