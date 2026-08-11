@@ -132,6 +132,43 @@ describe('roomEventHandlers', () => {
     expect(committed.map(message => message._id)).toEqual(['message-live']);
   });
 
+  it('queues live messages that arrive while previous messages are being processed', () => {
+    const mountedRef = { current: true };
+    const messageProcessingRef = { current: true };
+    const processedMessageIds = { current: new Set() };
+    let committed = [];
+    const setMessages = vi.fn(updater => {
+      committed = updater(committed);
+    });
+
+    const handlers = createRoomEventHandlers({
+      mountedRef,
+      messageProcessingRef,
+      processedMessageIds,
+      initialLoadCompletedRef: { current: true },
+      processMessages: vi.fn(),
+      setRoom: vi.fn(),
+      setMessages,
+      setLoadingMessages: vi.fn(),
+      setError: vi.fn(),
+      setHasMoreMessages: vi.fn(),
+      cleanup: vi.fn(),
+      logout: vi.fn(),
+      onReplace: vi.fn(),
+      handleReactionUpdate: vi.fn(),
+      showRejectedMessage: vi.fn(),
+    });
+
+    handlers.onMessage({
+      _id: 'message-during-load',
+      content: 'arrived during load',
+      timestamp: '2026-07-07T00:00:04.000Z',
+    });
+
+    expect(committed.map(message => message._id)).toEqual(['message-during-load']);
+    expect(processedMessageIds.current.has('message-during-load')).toBe(true);
+  });
+
   it('creates room event handlers with mounted and processing guards', () => {
     const mountedRef = { current: true };
     const messageProcessingRef = { current: false };

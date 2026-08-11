@@ -85,10 +85,6 @@ const ChatMessages = ({
     return (
       <div
         key={msg._id || `msg-${idx}`}
-        style={{
-          contentVisibility: 'auto',
-          containIntrinsicSize: '1px 96px',
-        }}
       >
       <MessageComponent
         {...commonProps}
