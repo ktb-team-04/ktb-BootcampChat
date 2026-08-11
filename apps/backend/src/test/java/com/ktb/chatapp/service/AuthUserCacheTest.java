@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -104,6 +105,30 @@ class AuthUserCacheTest {
         assertThat(cache.isMissing("fail@example.com")).isFalse();
     }
 
+    @Test
+    void redisCacheIsDisabledByDefault() {
+        AuthUserCache cache = new AuthUserCache(
+                redisTemplate,
+                JsonMapper.builder().build(),
+                10,
+                Duration.ofMinutes(1),
+                10,
+                Duration.ofMinutes(1),
+                false,
+                "test:auth:user:",
+                "test:auth:missing:");
+        String email = "local-only@example.com";
+
+        cache.put(User.builder().id("user-4").email(email).password("hash").build());
+        cache.invalidate(email);
+        assertThat(cache.get("unknown@example.com")).isNull();
+        assertThat(cache.isMissing("unknown@example.com")).isFalse();
+
+        verify(redisTemplate, never()).hasKey(anyString());
+        verify(valueOperations, never()).get(anyString());
+        verify(valueOperations, never()).set(anyString(), anyString(), org.mockito.ArgumentMatchers.any(Duration.class));
+    }
+
     private AuthUserCache redisBackedCache() {
         return new AuthUserCache(
                 redisTemplate,
@@ -112,6 +137,7 @@ class AuthUserCacheTest {
                 Duration.ofMinutes(1),
                 10,
                 Duration.ofMinutes(1),
+                true,
                 "test:auth:user:",
                 "test:auth:missing:");
     }
