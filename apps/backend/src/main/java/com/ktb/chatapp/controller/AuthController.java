@@ -5,6 +5,8 @@ import com.ktb.chatapp.event.SessionEndedEvent;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.JwtService;
+import com.ktb.chatapp.service.AuthLoadShedder;
+import com.ktb.chatapp.service.AuthUserCache;
 import com.ktb.chatapp.service.SessionCreationResult;
 import com.ktb.chatapp.service.SessionMetadata;
 import com.ktb.chatapp.service.SessionService;
@@ -22,18 +24,20 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
@@ -44,12 +48,14 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final SessionService sessionService;
     private final ApplicationEventPublisher eventPublisher;
+    private final MongoTemplate mongoTemplate;
+    private final AuthLoadShedder authLoadShedder;
+    private final AuthUserCache authUserCache;
 
     @Operation(summary = "인증 API 상태 확인", description = "인증 API의 사용 가능한 엔드포인트 목록을 반환합니다.")
     @ApiResponses({
@@ -85,35 +91,43 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(
             @Valid @RequestBody RegisterRequest registerRequest,
-            BindingResult bindingResult,
-            HttpServletRequest request) {
+            BindingResult bindingResult) {
 
         // Handle validation errors
         ResponseEntity<?> errors = getBindingError(bindingResult);
         if (errors != null) return errors;
-        
-        // Check existing user
-        if (userRepository.findByEmail(registerRequest.getEmail()).isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(StandardResponse.error("이미 등록된 이메일입니다."));
+
+        String normalizedEmail = registerRequest.getEmail().toLowerCase();
+        if (!authLoadShedder.tryAcquire()) {
+            return tooManyAuthRequests();
         }
 
         try {
-            // Create user
+            if (authUserCache.get(normalizedEmail) != null) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(StandardResponse.error("이미 등록된 이메일입니다."));
+            }
+            String encodedPassword = passwordEncoder.encode(registerRequest.getPassword());
             User user = User.builder()
+                    .id(UUID.randomUUID().toString())
                     .name(registerRequest.getName())
-                    .email(registerRequest.getEmail().toLowerCase())
-                    .password(passwordEncoder.encode(registerRequest.getPassword()))
+                    .email(normalizedEmail)
+                    .password(encodedPassword)
                     .build();
 
-            user = userRepository.save(user);
-
-            // Create session with metadata
-            SessionMetadata metadata = new SessionMetadata(
-                    request.getHeader("User-Agent"),
-                    getClientIpAddress(request),
-                    request.getHeader("User-Agent")
-            );
+            Query query = Query.query(Criteria.where("email").is(normalizedEmail));
+            Update update = new Update()
+                    .setOnInsert("_id", user.getId())
+                    .setOnInsert("name", user.getName())
+                    .setOnInsert("email", normalizedEmail)
+                    .setOnInsert("password", encodedPassword)
+                    .setOnInsert("createdAt", java.time.LocalDateTime.now());
+            var result = mongoTemplate.upsert(query, update, User.class);
+            if (result.getUpsertedId() == null) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(StandardResponse.error("이미 등록된 이메일입니다."));
+            }
+            authUserCache.put(user);
 
             LoginResponse response = LoginResponse.builder()
                     .success(true)
@@ -136,6 +150,8 @@ public class AuthController {
             log.error("Register error: ", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(StandardResponse.error("회원가입 처리 중 오류가 발생했습니다."));
+        } finally {
+            authLoadShedder.release();
         }
     }
     
@@ -161,24 +177,29 @@ public class AuthController {
         // Handle validation errors
         ResponseEntity<?> errors = getBindingError(bindingResult);
         if (errors != null) return errors;
+
+        if (!authLoadShedder.tryAcquire()) {
+            return tooManyAuthRequests();
+        }
         
         try {
-            // Authenticate user
-            User user = userRepository.findByEmail(loginRequest.getEmail().toLowerCase())
-                    .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            user.getEmail(),
-                            loginRequest.getPassword()
-                    )
-            );
+            String normalizedEmail = loginRequest.getEmail().toLowerCase();
+            if (authUserCache.isMissing(normalizedEmail)) {
+                throw new UsernameNotFoundException("User not found");
+            }
+            User user = authUserCache.get(normalizedEmail);
+            if (user == null) {
+                user = userRepository.findByEmail(normalizedEmail).orElse(null);
+                if (user == null) {
+                    authUserCache.markMissing(normalizedEmail);
+                    throw new UsernameNotFoundException("User not found");
+                }
+                authUserCache.put(user);
+            }
+            if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
+                throw new UsernameNotFoundException("Invalid credentials");
+            }
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            
-            // 단일 세션 정책을 위해 기존 세션 제거
-            sessionService.removeAllUserSessions(user.getId());
-
-            // Create new session
             SessionMetadata metadata = new SessionMetadata(
                     request.getHeader("User-Agent"),
                     getClientIpAddress(request),
@@ -207,14 +228,21 @@ public class AuthController {
                     .header("x-session-id", sessionInfo.getSessionId())
                     .body(response);
 
-        } catch (UsernameNotFoundException | BadCredentialsException e) {
+        } catch (UsernameNotFoundException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(StandardResponse.error("이메일 또는 비밀번호가 올바르지 않습니다."));
         } catch (Exception e) {
             log.error("Login error: ", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(StandardResponse.error("로그인 처리 중 오류가 발생했습니다."));
+        } finally {
+            authLoadShedder.release();
         }
+    }
+
+    private ResponseEntity<StandardResponse<Void>> tooManyAuthRequests() {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(StandardResponse.error(ApiErrorCode.TOO_MANY_REQUESTS));
     }
     
     @Operation(summary = "로그아웃", description = "현재 세션을 종료합니다. x-session-id 헤더가 필요합니다.")

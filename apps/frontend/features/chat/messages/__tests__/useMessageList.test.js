@@ -5,6 +5,16 @@ import {
 } from '../useMessageList';
 
 describe('mergeUniqueSortedMessages', () => {
+  it('sorts numeric epoch timestamps without treating them as invalid dates', () => {
+    const result = deriveUniqueSortedMessages(
+      [{ _id: 'newer', timestamp: 2000 }],
+      [{ _id: 'older', timestamp: 1000 }],
+      new Set(['newer'])
+    );
+
+    expect(result.messages.map((message) => message._id)).toEqual(['older', 'newer']);
+  });
+
   it('appends unseen messages in timestamp order without mutating processed ids', () => {
     const processedIds = new Set(['existing']);
 

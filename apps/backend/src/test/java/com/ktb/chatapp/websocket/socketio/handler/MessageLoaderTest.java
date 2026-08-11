@@ -2,7 +2,9 @@ package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
+import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
@@ -22,6 +24,7 @@ import org.springframework.data.domain.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -175,5 +178,35 @@ class MessageLoaderTest {
         
         assertThat(result.getMessages()).isEmpty();
         assertThat(result.isHasMore()).isFalse();
+    }
+
+    @Test
+    @DisplayName("loadMessages: 발신자와 첨부 파일을 각각 한 번에 조회")
+    void loadMessages_shouldBatchUsersAndFiles() {
+        Message first = createMessage("message-1", LocalDateTime.now().minusMinutes(2));
+        first.setFileId("file-1");
+        first.setType(MessageType.file);
+        Message second = createMessage("message-2", LocalDateTime.now().minusMinutes(1));
+        second.setFileId("file-2");
+        second.setType(MessageType.file);
+
+        Pageable pageable = PageRequest.of(0, 30, Sort.by("timestamp").descending());
+        when(messageRepository.findByRoomIdAndTimestampBefore(
+                eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(second, first), pageable, 2));
+        when(fileRepository.findAllById(Set.of("file-1", "file-2"))).thenReturn(List.of(
+                File.builder().id("file-1").filename("one.png").build(),
+                File.builder().id("file-2").filename("two.png").build()));
+
+        FetchMessagesResponse result = messageLoader.loadMessages(
+                new FetchMessagesRequest(roomId, 30, null), userId);
+
+        assertThat(result.getMessages()).hasSize(2);
+        assertThat(result.getMessages()).allSatisfy(message ->
+                assertThat(message.getFile()).isNotNull());
+        verify(userRepository, times(1)).findAllById(Set.of(userId));
+        verify(userRepository, never()).findById(anyString());
+        verify(fileRepository, times(1)).findAllById(Set.of("file-1", "file-2"));
+        verify(fileRepository, never()).findById(anyString());
     }
 }

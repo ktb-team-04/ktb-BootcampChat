@@ -8,9 +8,11 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
-import jakarta.annotation.Nullable;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -63,17 +65,23 @@ public class MessageLoader {
 
         // DESC로 조회했으므로 ASC로 재정렬 (채팅 UI 표시 순서)
         List<Message> sortedMessages = messages.reversed();
-        
+
         var messageIds = sortedMessages.stream().map(Message::getId).toList();
         messageReadStatusService.updateReadStatus(messageIds, userId);
-        
-        // 메시지 응답 생성
-        List<MessageResponse> messageResponses = sortedMessages.stream()
-                .map(message -> {
-                    var user = findUserById(message.getSenderId());
-                    return messageResponseMapper.mapToMessageResponse(message, user);
-                })
-                .collect(Collectors.toList());
+
+        // 발신자를 메시지마다 조회하지 않고 현재 배치에 필요한 사용자만 한 번에 읽는다.
+        Set<String> senderIds = sortedMessages.stream()
+                .map(Message::getSenderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, User> sendersById = senderIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(senderIds).stream()
+                        .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        // 파일 정보 역시 매퍼에서 현재 메시지 배치에 필요한 항목만 일괄 조회한다.
+        List<MessageResponse> messageResponses =
+                messageResponseMapper.mapToMessageResponses(sortedMessages, sendersById);
 
         boolean hasMore = messagePage.hasNext();
 
@@ -86,15 +94,4 @@ public class MessageLoader {
                 .build();
     }
 
-    /**
-     * AI 경우 null 반환 가능
-     */
-    @Nullable
-    private User findUserById(String id) {
-        if (id == null) {
-            return null;
-        }
-        return userRepository.findById(id)
-                .orElse(null);
-    }
 }

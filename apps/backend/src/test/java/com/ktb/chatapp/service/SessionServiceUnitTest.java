@@ -35,17 +35,17 @@ class SessionServiceUnitTest {
     private SessionService sessionService;
 
     @Test
-    @DisplayName("세션 생성은 기존 사용자 세션을 제거한 뒤 새 세션을 저장한다")
-    void createSession_RemovesExistingSessionsBeforeSave() {
+    @DisplayName("세션 생성은 사용자 세션을 단일 연산으로 교체한다")
+    void createSession_ReplacesExistingSessionInOneOperation() {
         ArgumentCaptor<Session> sessionCaptor = ArgumentCaptor.forClass(Session.class);
-        when(sessionStore.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sessionStore.replace(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         SessionCreationResult result = sessionService.createSession(
                 USER_ID,
                 new SessionMetadata("agent", "127.0.0.1", "device"));
 
-        verify(sessionStore).deleteAll(USER_ID);
-        verify(sessionStore).save(sessionCaptor.capture());
+        verify(sessionStore, never()).deleteAll(USER_ID);
+        verify(sessionStore).replace(sessionCaptor.capture());
         Session savedSession = sessionCaptor.getValue();
         assertThat(result.getSessionId()).isEqualTo(savedSession.getSessionId());
         assertThat(result.getExpiresIn()).isEqualTo(SessionService.SESSION_TTL_SEC);
@@ -56,7 +56,7 @@ class SessionServiceUnitTest {
     @Test
     @DisplayName("세션 생성 중 저장소 실패는 RuntimeException으로 래핑된다")
     void createSession_StoreFailure_ThrowsRuntimeException() {
-        doThrow(new IllegalStateException("store down")).when(sessionStore).deleteAll(USER_ID);
+        doThrow(new IllegalStateException("store down")).when(sessionStore).replace(any(Session.class));
 
         RuntimeException exception = assertThrows(
                 RuntimeException.class,
@@ -124,6 +124,31 @@ class SessionServiceUnitTest {
     }
 
     @Test
+    @DisplayName("최근 활동한 유효 세션은 검증할 때 다시 저장하지 않는다")
+    void validateSession_RecentActivity_DoesNotWrite() {
+        Session session = activeSession(Instant.now().toEpochMilli());
+        when(sessionStore.findByUserId(USER_ID)).thenReturn(Optional.of(session));
+
+        SessionValidationResult result = sessionService.validateSession(USER_ID, SESSION_ID);
+
+        assertThat(result.isValid()).isTrue();
+        verify(sessionStore, never()).save(any(Session.class));
+    }
+
+    @Test
+    @DisplayName("활동 시간 갱신 저장 실패는 유효한 세션을 거부하지 않는다")
+    void validateSession_TouchFailure_RemainsValid() {
+        Session session = activeSession(Instant.now().minusSeconds(61).toEpochMilli());
+        when(sessionStore.findByUserId(USER_ID)).thenReturn(Optional.of(session));
+        when(sessionStore.save(session)).thenThrow(new IllegalStateException("temporary write failure"));
+
+        SessionValidationResult result = sessionService.validateSession(USER_ID, SESSION_ID);
+
+        assertThat(result.isValid()).isTrue();
+        verify(sessionStore).save(session);
+    }
+
+    @Test
     @DisplayName("활성 세션 조회 중 저장소 실패는 null로 반환된다")
     void getActiveSession_StoreFailure_ReturnsNull() {
         when(sessionStore.findByUserId(USER_ID)).thenThrow(new IllegalStateException("store down"));
@@ -131,5 +156,15 @@ class SessionServiceUnitTest {
         SessionData result = sessionService.getActiveSession(USER_ID);
 
         assertThat(result).isNull();
+    }
+
+    private Session activeSession(long lastActivity) {
+        return Session.builder()
+                .userId(USER_ID)
+                .sessionId(SESSION_ID)
+                .createdAt(lastActivity)
+                .lastActivity(lastActivity)
+                .expiresAt(Instant.now().plusSeconds(SessionService.SESSION_TTL_SEC))
+                .build();
     }
 }
