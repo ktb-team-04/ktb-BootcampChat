@@ -1,82 +1,72 @@
 package com.ktb.chatapp.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.ktb.chatapp.repository.MessageRepository;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 @ExtendWith(MockitoExtension.class)
 class RecentMessageCounterTest {
 
-    @Mock private MessageRepository messageRepository;
+    private static final String KEY_PREFIX = "chat:recent-message-count:";
+
+    @Mock private MongoTemplate mongoTemplate;
+    @Mock private StringRedisTemplate redisTemplate;
+    @Mock private ValueOperations<String, String> valueOperations;
+
+    private RecentMessageCounter recentMessageCounter;
+
+    @BeforeEach
+    void setUp() {
+        recentMessageCounter = new RecentMessageCounter(
+                mongoTemplate,
+                redisTemplate,
+                KEY_PREFIX,
+                Duration.ofSeconds(5));
+    }
 
     @Test
-    void countsMultipleRoomsWithOneRepositoryCall() {
-        MessageRepository.RoomMessageCount first = count("room-1", 7);
-        MessageRepository.RoomMessageCount second = count("room-2", 3);
-        when(messageRepository.countRecentMessagesByRoomIds(eq(List.of("room-1", "room-2")), any()))
-                .thenReturn(List.of(first, second));
+    void returnsMultipleRoomCountsFromOneRedisCall() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.multiGet(List.of(KEY_PREFIX + "room-1", KEY_PREFIX + "room-2")))
+                .thenReturn(List.of("7", "3"));
 
-        Map<String, Integer> result = new RecentMessageCounter(messageRepository)
+        Map<String, Integer> result = recentMessageCounter
                 .countRecentMessages(List.of("room-1", "room-2"));
 
         assertThat(result).containsExactlyInAnyOrderEntriesOf(Map.of("room-1", 7, "room-2", 3));
-        verify(messageRepository).countRecentMessagesByRoomIds(eq(List.of("room-1", "room-2")), any());
+        verifyNoInteractions(mongoTemplate);
     }
 
     @Test
-    void skipsMongoForEmptyRoomList() {
-        Map<String, Integer> result = new RecentMessageCounter(messageRepository)
-                .countRecentMessages(List.of());
+    void skipsRedisAndMongoForEmptyRoomList() {
+        Map<String, Integer> result = recentMessageCounter.countRecentMessages(List.of());
 
         assertThat(result).isEmpty();
-        verify(messageRepository, never()).countRecentMessagesByRoomIds(any(), any());
+        verifyNoInteractions(redisTemplate, mongoTemplate);
     }
 
     @Test
-    void treatsNullAggregationResultAsNoRecentMessages() {
-        when(messageRepository.countRecentMessagesByRoomIds(eq(List.of("room-1")), any()))
-                .thenReturn(null);
+    void ignoresNullAndDuplicateRoomIds() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.multiGet(List.of(KEY_PREFIX + "room-1")))
+                .thenReturn(List.of("2"));
 
-        Map<String, Integer> result = new RecentMessageCounter(messageRepository)
-                .countRecentMessages(List.of("room-1"));
-
-        assertThat(result).isEmpty();
-    }
-
-    @Test
-    void ignoresNullAggregationRows() {
-        MessageRepository.RoomMessageCount count = count("room-1", 2);
-        when(messageRepository.countRecentMessagesByRoomIds(eq(List.of("room-1")), any()))
-                .thenReturn(java.util.Arrays.asList(null, count));
-
-        Map<String, Integer> result = new RecentMessageCounter(messageRepository)
-                .countRecentMessages(List.of("room-1"));
+        Map<String, Integer> result = recentMessageCounter
+                .countRecentMessages(java.util.Arrays.asList(null, "room-1", "room-1"));
 
         assertThat(result).containsExactlyEntriesOf(Map.of("room-1", 2));
-    }
-
-    private MessageRepository.RoomMessageCount count(String id, long value) {
-        return new MessageRepository.RoomMessageCount() {
-            @Override
-            public String getRoomId() {
-                return id;
-            }
-
-            @Override
-            public long getCount() {
-                return value;
-            }
-        };
+        verifyNoInteractions(mongoTemplate);
     }
 }

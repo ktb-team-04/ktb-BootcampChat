@@ -13,6 +13,7 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.ChatLookupCache;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -45,6 +46,7 @@ class RoomJoinHandlerTest {
     @Mock private MessageLoader messageLoader;
     @Mock private MessageResponseMapper messageResponseMapper;
     @Mock private RoomLeaveHandler roomLeaveHandler;
+    @Mock private ChatLookupCache chatLookupCache;
     @Mock private SocketIOClient client;
     @Mock private BroadcastOperations roomOperations;
 
@@ -60,7 +62,8 @@ class RoomJoinHandlerTest {
                 userRooms,
                 messageLoader,
                 messageResponseMapper,
-                roomLeaveHandler);
+                roomLeaveHandler,
+                chatLookupCache);
     }
 
     @Test

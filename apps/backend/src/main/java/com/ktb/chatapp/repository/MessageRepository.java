@@ -21,7 +21,7 @@ public interface MessageRepository extends MongoRepository<Message, String> {
      * 특정 시간 이후의 메시지 수 카운트
      * 최근 N분간 메시지 수를 조회할 때 사용
      */
-    @Query(value = "{ 'room': ?0, 'timestamp': { $gte: ?1 } }", count = true, readPreference = "secondaryPreferred")
+    @Query(value = "{ 'room': ?0, 'timestamp': { $gte: ?1 } }", count = true)
     long countRecentMessagesByRoomId(String roomId, LocalDateTime since);
 
     /**
