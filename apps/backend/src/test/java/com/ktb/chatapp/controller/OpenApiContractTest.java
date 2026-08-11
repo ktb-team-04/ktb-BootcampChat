@@ -1,9 +1,11 @@
 package com.ktb.chatapp.controller;
 
+import com.ktb.chatapp.config.MongoTestContainer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -15,10 +17,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(MongoTestContainer.class)
 @TestPropertySource(properties = {
         "spring.profiles.active=test",
         "socketio.enabled=false",
-        "spring.data.mongodb.uri=mongodb://localhost:27017/ktb-chat-test",
         "spring.data.mongodb.auto-index-creation=false",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
